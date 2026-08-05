@@ -125,8 +125,10 @@ enum UsageError: Error {
             return L.t("Accesso al portachiavi negato — aggiorna e scegli «Sempre»",
                        "Keychain access denied — refresh and choose “Always Allow”")
         case .tokenExpired, .unauthorized:
-            return L.t("Token scaduto — apri Claude Code per rinnovarlo",
-                       "Token expired — open Claude Code to renew it")
+            // Solo la CLI rinnova questo token: l'app desktop di Claude usa un
+            // archivio credenziali tutto suo e non tocca questa voce.
+            return L.t("Token scaduto — avvia `claude` nel Terminale per rinnovarlo",
+                       "Token expired — run `claude` in Terminal to renew it")
         case .rateLimited:
             return L.t("Troppe richieste all'API", "Too many API requests")
         case .http(let code):

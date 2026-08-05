@@ -99,10 +99,14 @@ from local logs, and there is no server in between.
 The token is kept in memory while it is valid, so the Keychain is only read
 again when the token expires or gets rejected — not on every update.
 
-Access tokens last a few hours and **Claude Code is what renews them**.
-MenuClaude re-reads the Keychain on each update, so using `claude` once puts
-everything back on track. It deliberately never renews or writes credentials
-itself, to avoid interfering with your Claude Code session.
+Access tokens last a few hours, and **only the `claude` CLI renews them** —
+the Claude desktop app keeps its own separate credentials and never touches this
+Keychain item. So if you work mostly in the desktop app or on the web, the token
+goes stale and MenuClaude will say so; running `claude` in a Terminal once puts
+it back on track.
+
+MenuClaude deliberately never renews or writes credentials itself, to avoid
+interfering with your Claude Code login.
 
 ## Privacy
 
@@ -261,4 +265,4 @@ as a fallback.
 The bundle identifier is `com.menuclaude.MenuClaude`. If you publish your own
 build, change it in `Info.plist` and `build.sh`.
 
-Not affiliated with Anthropic.
+Released under the [MIT licence](LICENSE). Not affiliated with Anthropic.

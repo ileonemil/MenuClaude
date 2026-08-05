@@ -99,10 +99,14 @@ dai log locali e non c'è nessun server intermedio.
 Il token resta in memoria finché è valido, quindi il portachiavi viene riletto
 solo quando scade o viene rifiutato — non a ogni aggiornamento.
 
-Gli access token durano poche ore ed **è Claude Code a rinnovarli**. MenuClaude
-rilegge il portachiavi a ogni aggiornamento, quindi basta usare `claude` una
-volta perché torni tutto a posto. Di proposito non rinnova né riscrive mai le
-credenziali per conto suo, per non interferire con la sessione di Claude Code.
+Gli access token durano poche ore e **li rinnova solo la CLI `claude`** —
+l'app desktop di Claude tiene credenziali tutte sue e non tocca mai questa voce
+del portachiavi. Quindi se lavori soprattutto nell'app desktop o dal web il
+token invecchia e MenuClaude te lo dice; basta lanciare `claude` da Terminale
+una volta perché torni tutto a posto.
+
+Di proposito MenuClaude non rinnova né riscrive mai le credenziali per conto
+suo, per non interferire con il login di Claude Code.
 
 ## Privacy
 
@@ -264,4 +268,4 @@ nel pannello senza modifiche al codice; i vecchi campi `five_hour` /
 Il bundle identifier è `com.menuclaude.MenuClaude`. Se pubblichi una tua
 versione, cambialo in `Info.plist` e in `build.sh`.
 
-Non affiliato ad Anthropic.
+Distribuito con [licenza MIT](LICENSE). Non affiliato ad Anthropic.
