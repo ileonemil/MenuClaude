@@ -8,6 +8,7 @@ struct ClaudeCredentials {
     var expiresAt: Date?
     var subscriptionType: String?
     var rateLimitTier: String?
+    var scopes: [String] = []
 
     var isExpired: Bool { !isValid(margin: 0) }
 
@@ -90,6 +91,44 @@ enum CredentialsStore {
         lock.unlock()
     }
 
+    /// Il JSON completo così com'è nel portachiavi. Serve per riscriverlo dopo
+    /// un rinnovo senza perdere quello che non ci riguarda: nella stessa voce
+    /// Claude Code tiene anche le credenziali OAuth dei server MCP.
+    static func rawDocument() -> Data? {
+        let query: [String: Any] = [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: service,
+            kSecReturnData as String: true,
+            kSecMatchLimit as String: kSecMatchLimitOne,
+        ]
+        var item: CFTypeRef?
+        keychainReads += 1
+        guard SecItemCopyMatching(query as CFDictionary, &item) == errSecSuccess else { return nil }
+        return item as? Data
+    }
+
+    /// Riscrive la voce del portachiavi. Torna `false` se macOS lo impedisce:
+    /// chi chiama deve trattarlo come un problema serio, non ignorarlo.
+    static func writeDocument(_ data: Data) -> Bool {
+        let query: [String: Any] = [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: service,
+        ]
+        let status = SecItemUpdate(query as CFDictionary, [kSecValueData as String: data] as CFDictionary)
+        return status == errSecSuccess
+    }
+
+    /// Aggiorna il token tenuto in memoria dopo un rinnovo riuscito, così l'app
+    /// riparte subito anche se la riscrittura sul portachiavi è fallita.
+    static func adoptInMemory(_ credentials: ClaudeCredentials) {
+        lock.lock()
+        cached = credentials
+        backoffUntil = .distantPast
+        lock.unlock()
+    }
+
+    static func parseDocument(_ data: Data) -> ClaudeCredentials? { parse(data) }
+
     private static func readKeychain() -> CredentialsResult {
         keychainReads += 1
         let query: [String: Any] = [
@@ -129,7 +168,8 @@ enum CredentialsStore {
             refreshToken: oauth["refreshToken"] as? String,
             expiresAt: expires,
             subscriptionType: oauth["subscriptionType"] as? String,
-            rateLimitTier: oauth["rateLimitTier"] as? String
+            rateLimitTier: oauth["rateLimitTier"] as? String,
+            scopes: (oauth["scopes"] as? [String]) ?? []
         )
     }
 }

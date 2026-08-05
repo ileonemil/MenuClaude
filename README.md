@@ -99,14 +99,50 @@ from local logs, and there is no server in between.
 The token is kept in memory while it is valid, so the Keychain is only read
 again when the token expires or gets rejected — not on every update.
 
-Access tokens last a few hours, and **only the `claude` CLI renews them** —
-the Claude desktop app keeps its own separate credentials and never touches this
-Keychain item. So if you work mostly in the desktop app or on the web, the token
-goes stale and MenuClaude will say so; running `claude` in a Terminal once puts
-it back on track.
+### The Renew button
 
-MenuClaude deliberately never renews or writes credentials itself, to avoid
-interfering with your Claude Code login.
+Access tokens last a few hours. Only the `claude` **CLI** renews them — the
+Claude desktop app keeps its own separate credentials and never touches this
+Keychain item. So if you work mostly in the desktop app or on the web, the token
+quietly goes stale and MenuClaude stops updating.
+
+When that happens the panel says **Token expired** and offers a **Renew**
+button. It uses the refresh token already in your Keychain, against the same
+endpoint and client id the CLI uses, and writes the result straight back — the
+rest of the Keychain entry, including the MCP server credentials Claude Code
+keeps alongside, is preserved untouched.
+
+Renewal is a **manual** action on purpose. The server *rotates* the refresh
+token — a renewal invalidates the previous one — so if the new token could not
+be written back, Claude Code's stored copy would be dead. MenuClaude retries the
+write, and if it still fails it says so with a warning telling you to run
+`claude auth login`, rather than failing quietly. Nothing happens unless you
+press the button.
+
+There is also `Renew the token` in the menu, and from a Terminal:
+
+```bash
+/Applications/MenuClaude.app/Contents/MacOS/MenuClaude --renew-token
+```
+
+## Updating
+
+MenuClaude updates itself. It checks GitHub releases on launch and once a day;
+when a new version exists, the menu's first entry becomes **Update to
+MenuClaude x.y.z** and (if the alert is on) a notification arrives. There is
+also **Check for updates…** whenever you want.
+
+Installing downloads the DMG from this repository, verifies the app inside
+matches the advertised version, then quits, swaps the bundle and reopens —
+about ten seconds, no dragging.
+
+No Apple Developer account is needed: that would be required to *sign* the app,
+not to replace it. `/Applications` is writable by admin users. Note that the
+update removes the quarantine flag from the freshly downloaded copy, which is
+what stops macOS from demanding the right-click-Open dance on every update; it
+comes over HTTPS from this repository's own releases and its version is checked
+before anything is replaced. If MenuClaude is somewhere it cannot write, it
+says so and asks you to move it to Applications.
 
 ## Privacy
 
@@ -128,6 +164,8 @@ Right-click the menu bar icon:
 | **Show ring** | The circular indicator next to the numbers |
 | **Coloured icon** | Turn off to keep the icon monochrome like other system icons |
 | **Launch at login** | Installs a LaunchAgent in `~/Library/LaunchAgents` |
+| **Check for updates…** | Becomes **Update to x.y.z** when a new release exists |
+| **Renew the token** | Refreshes the Claude access token — see [above](#the-renew-button) |
 
 The countdown ticks locally every second. The network is only used at the chosen
 frequency, when you open the panel with stale data, and after waking from sleep.
@@ -151,6 +189,7 @@ System notifications, each one switchable on its own:
 | Session reset | A new 5-hour window opens | off |
 | Claude server status | `status.claude.com` changes — degraded or recovered | off |
 | Prolonged update failures | The app hasn't been able to read data for 15+ minutes | off |
+| New MenuClaude version | A newer release is published on GitHub | on |
 
 One threshold applies to all quotas: 50, 70, 80 (default) or 90%.
 
@@ -172,8 +211,7 @@ tells you whether the problem is the macOS permission.
 This prints whether the credentials were found, whether the token is still
 valid, and what the API replied.
 
-The most common cause is an **expired token**: open Claude Code once and it
-renews itself.
+The most common cause is an **expired token**: press **Renew** in the panel.
 
 ### "Too many API requests"
 
@@ -244,7 +282,9 @@ Sources/MenuClaude/
   Keychain.swift              reading Claude Code's credentials
   Settings.swift              preferences in UserDefaults
   LaunchAtLogin.swift         LaunchAgent
-  Diagnostics.swift           --diagnose, --test-notification
+  TokenRefresher.swift        renewing the OAuth token, and writing it back
+  Updater.swift               in-app update from GitHub releases
+  Diagnostics.swift           --diagnose, --renew-token, --update, --test-notification
   Preview.swift               --preview <folder>
 Tools/make-icon.sh            regenerates Resources/AppIcon.icns
 Tools/make-dmg.sh             builds build/MenuClaude.dmg

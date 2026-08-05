@@ -26,6 +26,12 @@ enum Preview {
                   retryAt: Date().addingTimeInterval(4 * 60)),
             to: "\(directory)/pannello-429.png"
         )
+
+        // Token scaduto: è lo stato in cui compare il pulsante Rinnova.
+        write(
+            panel(stale, appearance: NSAppearance(named: .aqua)!, error: .tokenExpired),
+            to: "\(directory)/pannello-token.png"
+        )
         print("Anteprime scritte in \(directory)")
         exit(0)
     }

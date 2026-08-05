@@ -27,6 +27,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, PopoverDelegate, NSPop
     private var idleRounds = 0
     private static let maximumInterval: TimeInterval = 1800
 
+    private let refresher = TokenRefresher()
+    private var isRenewing = false
+
+    private let updater = Updater()
+    private var pendingUpdate: AvailableUpdate?
+    private var updateTimer: Timer?
+    private static let updateInterval: TimeInterval = 24 * 3600
+
     private let statusClient = StatusClient()
     private let alerts = AlertCenter()
     private var serverStatus: ServerStatus?
@@ -73,6 +81,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, PopoverDelegate, NSPop
         refresh(force: false)
         scheduleFetchTimer()
         scheduleStatusTimer()
+        scheduleUpdateTimer()
 
         uiTimer = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] _ in
             self?.tick()
@@ -96,6 +105,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, PopoverDelegate, NSPop
         fetchTimer?.invalidate()
         uiTimer?.invalidate()
         statusTimer?.invalidate()
+        updateTimer?.invalidate()
     }
 
     // MARK: - Aggiornamento dati
@@ -135,6 +145,126 @@ final class AppDelegate: NSObject, NSApplicationDelegate, PopoverDelegate, NSPop
         RunLoop.main.add(timer, forMode: .common)
         statusTimer = timer
         refreshServerStatus()
+    }
+
+    // MARK: - Aggiornamenti dell'app
+
+    private func scheduleUpdateTimer() {
+        updateTimer?.invalidate()
+        guard Settings.shared.checkForUpdates else { return }
+        let timer = Timer(
+            timeInterval: AppDelegate.updateInterval,
+            target: self,
+            selector: #selector(checkForUpdatesQuietly),
+            userInfo: nil,
+            repeats: true
+        )
+        timer.tolerance = 3600
+        RunLoop.main.add(timer, forMode: .common)
+        updateTimer = timer
+        // Un controllo all'avvio, senza fretta e senza finestre.
+        DispatchQueue.main.asyncAfter(deadline: .now() + 10) { [weak self] in
+            self?.checkForUpdatesQuietly()
+        }
+    }
+
+    /// Controllo di sfondo: se c'è una novità compare in cima al menu, e — se
+    /// l'avviso è attivo — arriva una notifica. Nessuna finestra a sorpresa.
+    @objc private func checkForUpdatesQuietly() {
+        guard Settings.shared.checkForUpdates else { return }
+        updater.check { [weak self] result in
+            guard let self = self, case .success(let update) = result, let update = update else { return }
+            let alreadyKnown = self.pendingUpdate?.version == update.version
+            self.pendingUpdate = update
+            guard !alreadyKnown, Settings.shared.isAlertEnabled(.updateAvailable) else { return }
+            Notifier.shared.send(
+                title: L.t("MenuClaude \(update.version) è disponibile",
+                           "MenuClaude \(update.version) is available"),
+                body: L.t("Apri il menu per aggiornare", "Open the menu to update"),
+                identifier: AlertKind.updateAvailable.rawValue
+            )
+        }
+    }
+
+    @objc private func menuCheckForUpdates() {
+        updater.check { [weak self] result in
+            guard let self = self else { return }
+            switch result {
+            case .failure(let error):
+                self.showUpdateAlert(
+                    title: L.t("Controllo non riuscito", "Check failed"),
+                    text: error.message
+                )
+            case .success(nil):
+                self.showUpdateAlert(
+                    title: L.t("Sei già aggiornato", "You're up to date"),
+                    text: L.t("MenuClaude \(self.updater.currentVersion) è l'ultima versione.",
+                              "MenuClaude \(self.updater.currentVersion) is the latest version.")
+                )
+            case .success(let update?):
+                self.pendingUpdate = update
+                self.offerUpdate(update)
+            }
+        }
+    }
+
+    @objc private func menuInstallUpdate() {
+        guard let update = pendingUpdate else {
+            menuCheckForUpdates()
+            return
+        }
+        offerUpdate(update)
+    }
+
+    private func offerUpdate(_ update: AvailableUpdate) {
+        let alert = NSAlert()
+        alert.messageText = L.t("MenuClaude \(update.version) è disponibile",
+                                "MenuClaude \(update.version) is available")
+        let size = ByteCountFormatter.string(fromByteCount: Int64(update.size), countStyle: .file)
+        alert.informativeText = L.t(
+            "Hai la versione \(updater.currentVersion). L'aggiornamento pesa \(size); "
+                + "MenuClaude si chiuderà e si riaprirà da sola.",
+            "You have version \(updater.currentVersion). The update is \(size); "
+                + "MenuClaude will quit and reopen by itself."
+        )
+        alert.addButton(withTitle: L.t("Aggiorna", "Update"))
+        alert.addButton(withTitle: L.t("Più tardi", "Later"))
+        NSApp.activate(ignoringOtherApps: true)
+        guard alert.runModal() == .alertFirstButtonReturn else { return }
+
+        let progress = NSAlert()
+        progress.messageText = L.t("Aggiornamento in corso…", "Updating…")
+        progress.informativeText = L.t("MenuClaude si riaprirà da sola quando ha finito.",
+                                       "MenuClaude will reopen by itself when it's done.")
+        let spinner = NSProgressIndicator(frame: NSRect(x: 0, y: 0, width: 260, height: 20))
+        spinner.style = .bar
+        spinner.isIndeterminate = true
+        spinner.startAnimation(nil)
+        progress.accessoryView = spinner
+
+        updater.install(update) { [weak self] error in
+            NSApp.stopModal()
+            guard let error = error else {
+                // Lo script di scambio aspetta che questo processo sparisca.
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { NSApp.terminate(nil) }
+                return
+            }
+            self?.showUpdateAlert(
+                title: L.t("Aggiornamento non riuscito", "Update failed"),
+                text: error.message
+            )
+        }
+        NSApp.activate(ignoringOtherApps: true)
+        progress.runModal()
+    }
+
+    private func showUpdateAlert(title: String, text: String) {
+        let alert = NSAlert()
+        alert.messageText = title
+        alert.informativeText = text
+        alert.addButton(withTitle: "OK")
+        NSApp.activate(ignoringOtherApps: true)
+        alert.runModal()
     }
 
     @objc private func refreshServerStatus() {
@@ -393,6 +523,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, PopoverDelegate, NSPop
         }
 
         menu.addItem(item(L.t("Aggiorna adesso", "Refresh now"), #selector(menuRefresh), key: "r"))
+        menu.addItem(item(L.t("Rinnova il token", "Renew the token"), #selector(menuRenewToken), key: ""))
 
         let display = NSMenu()
         for mode in DisplayMode.allCases {
@@ -446,8 +577,28 @@ final class AppDelegate: NSObject, NSApplicationDelegate, PopoverDelegate, NSPop
         menu.addItem(login)
 
         menu.addItem(.separator())
+
+        if let update = pendingUpdate {
+            let entry = item(L.t("Aggiorna a MenuClaude \(update.version)",
+                                 "Update to MenuClaude \(update.version)"),
+                             #selector(menuInstallUpdate), key: "")
+            // In grassetto: è l'unica voce che vale la pena notare adesso.
+            entry.attributedTitle = NSAttributedString(
+                string: entry.title,
+                attributes: [.font: NSFont.menuFont(ofSize: 0).bold()]
+            )
+            menu.addItem(entry)
+        } else {
+            menu.addItem(item(L.t("Cerca aggiornamenti…", "Check for updates…"),
+                              #selector(menuCheckForUpdates), key: ""))
+        }
+
         menu.addItem(item(L.t("Apri utilizzo su claude.ai", "Open usage on claude.ai"), #selector(menuOpenWeb), key: ""))
         menu.addItem(.separator())
+        let version = item(L.t("Versione \(updater.currentVersion)", "Version \(updater.currentVersion)"),
+                           #selector(menuCheckForUpdates), key: "")
+        version.isEnabled = false
+        menu.addItem(version)
         menu.addItem(item(L.t("Esci da MenuClaude", "Quit MenuClaude"), #selector(menuQuit), key: "q"))
         return menu
     }
@@ -504,6 +655,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate, PopoverDelegate, NSPop
     // MARK: - Voci di menu
 
     @objc private func menuRefresh() { refresh(force: true) }
+
+    @objc private func menuRenewToken() {
+        togglePopoverForRenewal()
+        renewToken()
+    }
+
+    /// Il rinnovo mostra il suo esito nel pannello: se è chiuso, si apre.
+    private func togglePopoverForRenewal() {
+        guard !popover.isShown, let button = statusItem.button else { return }
+        panel.render(snapshot: snapshot, error: lastError,
+                     retryAt: backoff.retryAt, serverStatus: serverStatus)
+        popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
+        NSApp.activate(ignoringOtherApps: true)
+    }
 
     @objc private func menuSetDisplay(_ sender: NSMenuItem) {
         if let mode = DisplayMode(rawValue: sender.tag) {
@@ -617,6 +782,69 @@ final class AppDelegate: NSObject, NSApplicationDelegate, PopoverDelegate, NSPop
     // MARK: - PopoverDelegate
 
     func popoverDidRequestRefresh() { refresh(force: true) }
+
+    func popoverDidRequestTokenRenewal() { renewToken() }
+
+    /// Rinnovo manuale del token. Manuale di proposito: tocca le credenziali di
+    /// Claude Code, quindi deve essere un gesto deliberato e riconoscibile.
+    private func renewToken() {
+        guard !isRenewing else { return }
+        isRenewing = true
+        panel.renewalInProgress = true
+        panel.showRenewalState(L.t("Rinnovo del token in corso…", "Renewing the token…"),
+                               busy: true, failed: false)
+
+        refresher.refresh { [weak self] result in
+            guard let self = self else { return }
+            self.isRenewing = false
+            self.panel.renewalInProgress = false
+
+            switch result {
+            case .success:
+                self.lastError = nil
+                self.backoff.reset()
+                self.backoff.save()
+                self.panel.showRenewalState(L.t("Token rinnovato", "Token renewed"),
+                                            busy: false, failed: false)
+                self.refresh(force: true)
+
+            case .failure(let error):
+                self.panel.showRenewalState(error.message, busy: false, failed: true)
+                if case .tokenRenewedButNotSaved = error { self.warnAboutUnsavedToken() }
+            }
+        }
+    }
+
+    /// Il caso che non va nascosto: il token nuovo funziona qui, ma nel
+    /// portachiavi è rimasto il vecchio. Se il server lo ha ruotato, Claude Code
+    /// ha in mano un refresh token ormai invalido.
+    private func warnAboutUnsavedToken() {
+        let alert = NSAlert()
+        alert.alertStyle = .critical
+        alert.messageText = L.t("Token rinnovato ma non salvato",
+                                "Token renewed but not saved")
+        alert.informativeText = L.t(
+            """
+            MenuClaude ha ottenuto un token valido e continuerà a funzionare, ma \
+            macOS non gli ha permesso di riscriverlo nel portachiavi.
+
+            Se il server ha sostituito il refresh token, quello che Claude Code \
+            ha salvato non vale più: al prossimo problema di autenticazione \
+            esegui `claude auth login` nel Terminale.
+            """,
+            """
+            MenuClaude obtained a valid token and will keep working, but macOS \
+            would not let it write the token back to the Keychain.
+
+            If the server replaced the refresh token, the one Claude Code has \
+            stored is no longer valid: next time authentication fails, run \
+            `claude auth login` in a Terminal.
+            """
+        )
+        alert.addButton(withTitle: "OK")
+        NSApp.activate(ignoringOtherApps: true)
+        alert.runModal()
+    }
 
     func popoverDidRequestMenu(from view: NSView) { showMenu(from: view) }
 }

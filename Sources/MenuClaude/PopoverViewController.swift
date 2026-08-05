@@ -3,6 +3,7 @@ import Cocoa
 protocol PopoverDelegate: AnyObject {
     func popoverDidRequestRefresh()
     func popoverDidRequestMenu(from view: NSView)
+    func popoverDidRequestTokenRenewal()
 }
 
 /// Il pannello che compare cliccando sull'icona nella barra dei menu.
@@ -19,6 +20,11 @@ final class PopoverViewController: NSViewController {
     private let errorLabel = LimitRowView.label(size: 11, weight: .regular, color: .systemRed)
     private let refreshButton = NSButton()
     private let menuButton = NSButton()
+    private let renewButton = NSButton()
+    /// Creata qui e non in `loadView`: `render` può arrivare prima che la
+    /// vista sia stata caricata, e un optional implicito qui significava un
+    /// crash all'avvio.
+    private let errorRow = NSStackView()
 
     private var rows: [String: LimitRowView] = [:]
     private var rowOrder: [String] = []
@@ -28,6 +34,8 @@ final class PopoverViewController: NSViewController {
     private var snapshot: UsageSnapshot?
     private var lastError: UsageError?
     private var retryAt: Date?
+    /// Mentre il rinnovo è in corso il messaggio non va sovrascritto dal tick.
+    var renewalInProgress = false
 
     override func loadView() {
         let root = NSView(frame: NSRect(x: 0, y: 0, width: width, height: 200))
@@ -37,6 +45,20 @@ final class PopoverViewController: NSViewController {
         errorLabel.lineBreakMode = .byWordWrapping
         errorLabel.maximumNumberOfLines = 3
         errorLabel.isHidden = true
+
+        renewButton.title = L.t("Rinnova", "Renew")
+        renewButton.bezelStyle = .rounded
+        renewButton.controlSize = .small
+        renewButton.font = NSFont.systemFont(ofSize: 11, weight: .medium)
+        renewButton.target = self
+        renewButton.action = #selector(renewClicked)
+        renewButton.setContentHuggingPriority(.required, for: .horizontal)
+        renewButton.isHidden = true
+
+        errorRow.setViews([errorLabel, renewButton], in: .leading)
+        errorRow.orientation = .horizontal
+        errorRow.spacing = 8
+        errorRow.alignment = .centerY
 
         configure(button: refreshButton, symbol: "arrow.clockwise", tooltip: L.t("Aggiorna adesso", "Refresh now"), action: #selector(refreshClicked))
         configure(button: menuButton, symbol: "ellipsis.circle", tooltip: L.t("Opzioni", "Options"), action: #selector(menuClicked))
@@ -67,7 +89,7 @@ final class PopoverViewController: NSViewController {
         content.spacing = 12
         content.alignment = .leading
         content.translatesAutoresizingMaskIntoConstraints = false
-        content.setViews([header, errorLabel, limitsContainer, SeparatorView(), footer], in: .top)
+        content.setViews([header, errorRow, limitsContainer, SeparatorView(), footer], in: .top)
 
         root.addSubview(content)
         NSLayoutConstraint.activate([
@@ -77,7 +99,7 @@ final class PopoverViewController: NSViewController {
             content.topAnchor.constraint(equalTo: root.topAnchor, constant: 12),
             content.bottomAnchor.constraint(equalTo: root.bottomAnchor, constant: -12),
             header.widthAnchor.constraint(equalTo: content.widthAnchor),
-            errorLabel.widthAnchor.constraint(equalTo: content.widthAnchor),
+            errorRow.widthAnchor.constraint(equalTo: content.widthAnchor),
             limitsContainer.widthAnchor.constraint(equalTo: content.widthAnchor),
             footer.widthAnchor.constraint(equalTo: content.widthAnchor),
         ])
@@ -108,6 +130,13 @@ final class PopoverViewController: NSViewController {
         self.retryAt = retryAt
 
         errorLabel.isHidden = error == nil
+        errorRow.isHidden = error == nil
+        switch error {
+        case .tokenExpired?, .unauthorized?:
+            renewButton.isHidden = false
+        default:
+            renewButton.isHidden = true
+        }
 
         if let status = serverStatus {
             serverDot.isHidden = false
@@ -176,7 +205,9 @@ final class PopoverViewController: NSViewController {
     func tick() {
         for (key, row) in rows where key != "__extra" { row.tick() }
 
+        if renewalInProgress { return }
         if let error = lastError {
+            errorLabel.textColor = .systemRed
             var text = error.message
             if let retryAt = retryAt, retryAt > Date(),
                let countdown = Format.countdown(to: retryAt) {
@@ -202,6 +233,20 @@ final class PopoverViewController: NSViewController {
 
     @objc private func menuClicked() {
         delegate?.popoverDidRequestMenu(from: menuButton)
+    }
+
+    @objc private func renewClicked() {
+        delegate?.popoverDidRequestTokenRenewal()
+    }
+
+    /// Mostra l'esito del rinnovo al posto del messaggio d'errore.
+    func showRenewalState(_ text: String, busy: Bool, failed: Bool) {
+        errorRow.isHidden = false
+        errorLabel.isHidden = false
+        errorLabel.stringValue = text
+        errorLabel.textColor = failed ? .systemRed : .secondaryLabelColor
+        renewButton.isEnabled = !busy
+        renewButton.title = busy ? L.t("Rinnovo…", "Renewing…") : L.t("Rinnova", "Renew")
     }
 }
 

@@ -99,14 +99,51 @@ dai log locali e non c'è nessun server intermedio.
 Il token resta in memoria finché è valido, quindi il portachiavi viene riletto
 solo quando scade o viene rifiutato — non a ogni aggiornamento.
 
-Gli access token durano poche ore e **li rinnova solo la CLI `claude`** —
-l'app desktop di Claude tiene credenziali tutte sue e non tocca mai questa voce
-del portachiavi. Quindi se lavori soprattutto nell'app desktop o dal web il
-token invecchia e MenuClaude te lo dice; basta lanciare `claude` da Terminale
-una volta perché torni tutto a posto.
+### Il pulsante Rinnova
 
-Di proposito MenuClaude non rinnova né riscrive mai le credenziali per conto
-suo, per non interferire con il login di Claude Code.
+Gli access token durano poche ore. Li rinnova solo la **CLI** `claude` — l'app
+desktop di Claude tiene credenziali tutte sue e non tocca mai questa voce del
+portachiavi. Quindi se lavori soprattutto nell'app desktop o dal web il token
+invecchia in silenzio e MenuClaude smette di aggiornarsi.
+
+Quando succede, il pannello scrive **Token scaduto** e mostra il pulsante
+**Rinnova**. Usa il refresh token che è già nel tuo portachiavi, sullo stesso
+endpoint e con lo stesso client id della CLI, e riscrive il risultato al suo
+posto — il resto della voce, comprese le credenziali dei server MCP che Claude
+Code tiene lì accanto, resta intatto.
+
+Il rinnovo è **manuale** di proposito. Il server *ruota* il refresh token: un
+rinnovo invalida il precedente, quindi se quello nuovo non riuscisse a essere
+riscritto, la copia che ha Claude Code sarebbe morta. MenuClaude ritenta la
+scrittura e, se fallisce comunque, te lo dice con un avviso che ti manda a
+`claude auth login` invece di fallire in silenzio. Senza premere il pulsante non
+succede nulla.
+
+C'è anche `Rinnova il token` nel menu, e da Terminale:
+
+```bash
+/Applications/MenuClaude.app/Contents/MacOS/MenuClaude --renew-token
+```
+
+## Aggiornamenti
+
+MenuClaude si aggiorna da sola. Controlla le release di GitHub all'avvio e una
+volta al giorno; quando esce una versione nuova, la prima voce del menu diventa
+**Aggiorna a MenuClaude x.y.z** e (se l'avviso è attivo) arriva una notifica.
+C'è anche **Cerca aggiornamenti…** quando vuoi.
+
+L'installazione scarica il DMG da questo repository, verifica che l'app dentro
+corrisponda alla versione annunciata, poi si chiude, scambia il bundle e si
+riapre — una decina di secondi, senza trascinare niente.
+
+Non serve un account sviluppatore Apple: quello servirebbe a *firmare* l'app,
+non a sostituirla, e `/Applications` è scrivibile dagli utenti amministratori.
+Da sapere: l'aggiornamento toglie il contrassegno di quarantena alla copia
+appena scaricata, ed è ciò che evita di rifare il clic destro → Apri a ogni
+aggiornamento; il file arriva via HTTPS dalle release di questo stesso
+repository e la sua versione viene verificata prima di sostituire qualcosa. Se
+MenuClaude si trova in una cartella dove non può scrivere, lo dice e ti chiede
+di spostarla in Applicazioni.
 
 ## Privacy
 
@@ -129,6 +166,8 @@ Clic destro sull'icona:
 | **Mostra anello** | L'indicatore circolare accanto ai numeri |
 | **Icona a colori** | Disattivala per tenere l'icona monocromatica come le altre di sistema |
 | **Avvia al login** | Installa un LaunchAgent in `~/Library/LaunchAgents` |
+| **Cerca aggiornamenti…** | Diventa **Aggiorna a x.y.z** quando esce una release |
+| **Rinnova il token** | Rinnova l'access token di Claude — vedi [sopra](#il-pulsante-rinnova) |
 
 Il countdown scorre in locale ogni secondo. La rete viene usata solo alla
 frequenza scelta, all'apertura del pannello se il dato è vecchio, e al risveglio
@@ -153,6 +192,7 @@ Notifiche di sistema, ognuna attivabile a sé:
 | Sessione azzerata | Si apre una nuova finestra di cinque ore | spento |
 | Stato dei server Claude | `status.claude.com` cambia stato — degrado o ripristino | spento |
 | Errori di aggiornamento prolungati | L'app non riesce a leggere i dati da oltre 15 minuti | spento |
+| Nuova versione di MenuClaude | Su GitHub è uscita una release più recente | acceso |
 
 La soglia è una sola per tutte le quote: 50, 70, 80 (default) o 90%.
 
@@ -174,8 +214,7 @@ problema è il permesso di macOS.
 Stampa se le credenziali sono state trovate, se il token è ancora valido e cosa
 ha risposto l'API.
 
-La causa più comune è il **token scaduto**: apri Claude Code una volta e si
-rinnova da solo.
+La causa più comune è il **token scaduto**: premi **Rinnova** nel pannello.
 
 ### "Troppe richieste all'API"
 
@@ -247,7 +286,9 @@ Sources/MenuClaude/
   Keychain.swift              lettura delle credenziali di Claude Code
   Settings.swift              preferenze in UserDefaults
   LaunchAtLogin.swift         LaunchAgent
-  Diagnostics.swift           --diagnose, --test-notification
+  TokenRefresher.swift        rinnovo del token OAuth e riscrittura
+  Updater.swift               aggiornamento in-app dalle release GitHub
+  Diagnostics.swift           --diagnose, --renew-token, --update, --test-notification
   Preview.swift               --preview <cartella>
 Tools/make-icon.sh            rigenera Resources/AppIcon.icns
 Tools/make-dmg.sh             crea build/MenuClaude.dmg

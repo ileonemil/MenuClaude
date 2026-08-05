@@ -41,6 +41,7 @@ final class Settings {
         static let colorInMenuBar = "colorInMenuBar"
         static let alertThreshold = "alertThreshold"
         static let language = "language"
+        static let checkForUpdates = "checkForUpdates"
         static func alert(_ kind: AlertKind) -> String { "alertEnabled.\(kind.rawValue)" }
     }
 
@@ -53,6 +54,7 @@ final class Settings {
             Key.colorInMenuBar: true,
             Key.alertThreshold: 80.0,
             Key.language: Language.system.rawValue,
+            Key.checkForUpdates: true,
         ]
         for kind in AlertKind.allCases {
             registered[Key.alert(kind)] = kind.enabledByDefault
@@ -87,6 +89,12 @@ final class Settings {
     var language: Language {
         get { Language(rawValue: defaults.integer(forKey: Key.language)) ?? .system }
         set { defaults.set(newValue.rawValue, forKey: Key.language) }
+    }
+
+    /// Controllo automatico delle nuove versioni su GitHub.
+    var checkForUpdates: Bool {
+        get { defaults.bool(forKey: Key.checkForUpdates) }
+        set { defaults.set(newValue, forKey: Key.checkForUpdates) }
     }
 
     // MARK: - Avvisi

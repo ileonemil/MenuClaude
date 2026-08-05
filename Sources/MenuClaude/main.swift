@@ -4,6 +4,10 @@ import Cocoa
 // risposta dell'API, quote lette) ed esce: utile quando la barra mostra "!".
 if CommandLine.arguments.contains("--diagnose") {
     Diagnostics.run()
+} else if CommandLine.arguments.contains("--update") {
+    Diagnostics.update()
+} else if CommandLine.arguments.contains("--renew-token") {
+    Diagnostics.renewToken()
 } else if CommandLine.arguments.contains("--test-notification") {
     Diagnostics.testNotification()
 } else if let index = CommandLine.arguments.firstIndex(of: "--preview"),

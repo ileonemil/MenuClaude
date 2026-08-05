@@ -9,6 +9,7 @@ enum AlertKind: String, CaseIterable {
     case sessionReset
     case serverStatus
     case fetchFailure
+    case updateAvailable
 
     var label: String {
         switch self {
@@ -19,13 +20,14 @@ enum AlertKind: String, CaseIterable {
         case .sessionReset: return L.t("Sessione azzerata", "Session reset")
         case .serverStatus: return L.t("Stato dei server Claude", "Claude server status")
         case .fetchFailure: return L.t("Errori di aggiornamento prolungati", "Prolonged update failures")
+        case .updateAvailable: return L.t("Nuova versione di MenuClaude", "New MenuClaude version")
         }
     }
 
     /// Acceso di default: le soglie e i limiti. Il resto è opt-in.
     var enabledByDefault: Bool {
         switch self {
-        case .sessionThreshold, .weeklyThreshold, .limitReached: return true
+        case .sessionThreshold, .weeklyThreshold, .limitReached, .updateAvailable: return true
         default: return false
         }
     }

@@ -37,6 +37,76 @@ enum Diagnostics {
         exit(status)
     }
 
+    /// `--renew-token`: la stessa cosa che fa il pulsante Rinnova, da terminale.
+    static func renewToken() -> Never {
+        print(L.t("MenuClaude — rinnovo del token\n", "MenuClaude — token renewal\n"))
+        var done = false
+        var status: Int32 = 1
+
+        TokenRefresher().refresh { result in
+            switch result {
+            case .success(let credentials):
+                print(L.t("✓ Token rinnovato e salvato nel portachiavi",
+                          "✓ Token renewed and saved to the Keychain"))
+                if let expires = credentials.expiresAt {
+                    print(L.t("  nuova scadenza: ", "  new expiry: ")
+                        + (Format.resetStamp(expires) ?? "?"))
+                }
+                status = 0
+            case .failure(let error):
+                print("✗ \(error.message)")
+            }
+            done = true
+        }
+
+        let deadline = Date().addingTimeInterval(40)
+        while !done, Date() < deadline {
+            RunLoop.main.run(until: Date().addingTimeInterval(0.1))
+        }
+        if !done { print(L.t("✗ Nessuna risposta entro 40 secondi", "✗ No response within 40 seconds")) }
+        exit(status)
+    }
+
+    /// `--update`: controlla e, se c'è una versione nuova, la installa.
+    static func update() -> Never {
+        let updater = Updater()
+        print(L.t("MenuClaude \(updater.currentVersion) — controllo aggiornamenti\n",
+                  "MenuClaude \(updater.currentVersion) — checking for updates\n"))
+        var done = false
+        var status: Int32 = 1
+
+        updater.check { result in
+            switch result {
+            case .failure(let error):
+                print("✗ \(error.message)")
+                done = true
+            case .success(nil):
+                print(L.t("✓ Già aggiornato", "✓ Already up to date"))
+                status = 0
+                done = true
+            case .success(let update?):
+                print(L.t("→ Disponibile la \(update.version), scarico…",
+                          "→ Version \(update.version) available, downloading…"))
+                updater.install(update) { error in
+                    if let error = error {
+                        print("✗ \(error.message)")
+                    } else {
+                        print(L.t("✓ Installata: MenuClaude si riaprirà da sola",
+                                  "✓ Installed: MenuClaude will reopen by itself"))
+                        status = 0
+                    }
+                    done = true
+                }
+            }
+        }
+
+        let deadline = Date().addingTimeInterval(300)
+        while !done, Date() < deadline {
+            RunLoop.main.run(until: Date().addingTimeInterval(0.1))
+        }
+        exit(status)
+    }
+
     static func run() -> Never {
         print(L.t("MenuClaude — diagnostica\n", "MenuClaude — diagnostics\n"))
 

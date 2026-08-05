@@ -42,3 +42,9 @@ extension NSFont {
         NSFont.monospacedDigitSystemFont(ofSize: size, weight: weight)
     }
 }
+
+extension NSFont {
+    func bold() -> NSFont {
+        NSFontManager.shared.convert(self, toHaveTrait: .boldFontMask)
+    }
+}
