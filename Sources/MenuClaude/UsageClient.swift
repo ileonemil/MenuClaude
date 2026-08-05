@@ -29,6 +29,15 @@ final class UsageClient {
             return
         }
 
+        // `load` ha già riletto il portachiavi se il token in memoria era
+        // scaduto: se è ancora vecchio, Claude Code non l'ha rinnovato e la
+        // richiesta fallirebbe di sicuro. Meglio non spenderla — il budget di
+        // chiamate è condiviso e limitato.
+        guard !creds.isExpired else {
+            DispatchQueue.main.async { completion(.failure(.tokenExpired)) }
+            return
+        }
+
         send(using: creds, allowRetry: true, completion: completion)
     }
 
