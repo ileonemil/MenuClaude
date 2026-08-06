@@ -45,49 +45,56 @@ dipendenza.
 
 ## Installazione
 
-### 1. Scarica e trascina
+### Il modo semplice (consigliato)
 
-Prendi `MenuClaude.dmg` dall'[ultima release](../../releases/latest) e aprilo.
-Trascina MenuClaude sulla cartella Applicazioni.
+Incolla questo nel Terminale:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/ileonemil/MenuClaude/main/install.sh | bash
+```
+
+Scarica l'ultima versione, mette MenuClaude in `/Applications` e la avvia.
+**Nessun avviso di sicurezza da superare**: i file scaricati con `curl` non
+vengono mai contrassegnati come "in quarantena", quindi Gatekeeper non ha nulla
+da bloccare. Lo script è [qui](install.sh) se vuoi leggerlo prima; usa solo
+strumenti già presenti in macOS.
+
+### Il modo manuale
+
+Scarica `MenuClaude.dmg` dall'[ultima release](../../releases/latest), aprilo e
+trascina MenuClaude sulla cartella Applicazioni.
 
 <img src="docs/images/dmg-window.png" width="480" alt="La finestra del DMG">
 
-### 2. Primo avvio: clic destro → Apri
+A quel punto macOS si rifiuterà di aprirla dicendo che *"non è in grado di
+verificare che MenuClaude non contenga malware"*, offrendo solo **Sposta nel
+Cestino** e **Fine**. L'app non ha niente che non va: semplicemente non è
+firmata da uno sviluppatore Apple registrato. Per farla passare:
 
-**Questo passaggio conta.** MenuClaude non è firmata da uno sviluppatore Apple
-registrato, quindi con un doppio clic macOS si rifiuta di aprirla — a volte con
-un messaggio che dice che l'app è danneggiata. Non lo è.
+**Impostazioni di Sistema → Privacy e Sicurezza →** scorri fino a Sicurezza →
+accanto a *"MenuClaude è stata bloccata…"* premi **Apri comunque** → conferma.
 
-Apri la cartella Applicazioni, **fai clic destro su MenuClaude, scegli Apri**,
-poi conferma nella finestra che compare. Va fatto una volta sola: da lì in poi
-si apre normalmente.
+> Le guide più vecchie dicono di fare clic destro sull'app e scegliere Apri.
+> **Da macOS 15 Sequoia non funziona più**: per le app non firmate quella
+> scorciatoia non compare, e senza Terminale l'unica strada sono le
+> Impostazioni di Sistema. Firmare un'app in modo che macOS si fidi a prima
+> vista richiede l'iscrizione all'Apple Developer Program (99 $/anno), che
+> questo strumento gratuito non ha.
 
-> Perché: firmare un'app in modo che macOS si fidi al primo avvio richiede
-> l'iscrizione all'Apple Developer Program (99 $/anno). Questo è uno strumento
-> gratuito condiviso tra amici, quindi non è firmata. Il clic destro è il modo
-> che macOS mette a disposizione per dire "so da dove viene".
+### Poi
 
-### 3. Consenti l'accesso al portachiavi — scegli "Sempre"
+Quando macOS chiede l'accesso al portachiavi scegli **"Sempre"**, non
+"Consenti". "Consenti" autorizza una singola lettura e il pannello ricompare;
+"Sempre" aggiunge l'app alla lista di quelle autorizzate.
 
-MenuClaude legge il token OAuth che Claude Code salva nel portachiavi di login,
-perché è quello che dimostra ad Anthropic di quale account riportare l'utilizzo.
-macOS chiederà il permesso la prima volta.
-
-**Scegli "Sempre", non "Consenti".** "Consenti" autorizza una singola lettura e
-il pannello ricompare; "Sempre" aggiunge l'app alla lista di quelle autorizzate
-e non lo rivedi più.
-
-### 4. Consenti le notifiche (facoltativo)
-
-Se vuoi essere avvisato quando ti avvicini ai limiti, accetta la richiesta di
-notifiche. Puoi cambiare idea dopo, da **Avvisi** nel menu.
-
-### 5. Avvio automatico (facoltativo)
-
-Clic destro sull'icona nella barra dei menu → **Avvia al login**.
+Se vuoi, accetta le notifiche (servono per gli avvisi sulle soglie) e attiva
+**Avvia al login** dal menu.
 
 L'icona sta nella barra dei menu, in alto a destra. Non compare mai nel Dock.
 **Clic sinistro** apre il pannello, **clic destro** apre le opzioni.
+
+Da qui in poi agli aggiornamenti pensa l'app — vedi
+[Aggiornamenti](#aggiornamenti).
 
 ## Da dove arrivano i dati
 
@@ -144,6 +151,20 @@ aggiornamento; il file arriva via HTTPS dalle release di questo stesso
 repository e la sua versione viene verificata prima di sostituire qualcosa. Se
 MenuClaude si trova in una cartella dove non può scrivere, lo dice e ti chiede
 di spostarla in Applicazioni.
+
+### Quante volte macOS chiede il portachiavi
+
+L'autorizzazione è legata all'*identità del binario firmato*. Con la firma
+ad-hoc quell'identità è l'hash del binario, quindi ogni build nuova è uno
+sconosciuto: il pannello compare una volta alla prima installazione e una volta
+dopo ogni aggiornamento automatico. Basta scegliere «Sempre» ogni volta.
+
+Per rendere il permesso permanente anche tra un aggiornamento e l'altro, firma
+le build con un certificato personale — vedi [Compilare dai
+sorgenti](#compilare-dai-sorgenti).
+
+Da sapere anche che leggere la voce da Terminale (`security find-generic-password`)
+fa comparire una richiesta a parte, perché `security` è un altro programma.
 
 ## Privacy
 
@@ -228,10 +249,14 @@ ultimi numeri buoni.
 adesso l'app concede un solo tentativo manuale per attesa e ignora gli altri.
 L'attesa sopravvive anche alla chiusura e riapertura dell'app.
 
-### macOS dice che l'app è danneggiata
+### macOS dice che non può verificare l'app
 
-Non lo è: è il messaggio delle app non firmate. Clic destro sull'app → **Apri**.
-Vedi il [passaggio 2](#2-primo-avvio-clic-destro--apri).
+È previsto: non è firmata da uno sviluppatore Apple registrato. O usi
+l'[installer da Terminale](#il-modo-semplice-consigliato), che evita del tutto
+il blocco, oppure vai in **Impostazioni di Sistema → Privacy e Sicurezza → Apri
+comunque**.
+
+Il clic destro → Apri non funziona più da macOS 15 in poi.
 
 ### Le notifiche non arrivano
 

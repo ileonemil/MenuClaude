@@ -45,49 +45,55 @@ That's it. No account to create, no configuration file, no dependencies.
 
 ## Install
 
-### 1. Download and drag
+### The easy way (recommended)
 
-Grab `MenuClaude.dmg` from the [latest release](../../releases/latest) and open
-it. Drag MenuClaude onto the Applications folder.
+Paste this into Terminal:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/ileonemil/MenuClaude/main/install.sh | bash
+```
+
+It downloads the latest release, puts MenuClaude in `/Applications` and starts
+it. **No security warnings to click through** — files fetched with `curl` are
+never marked as quarantined, so Gatekeeper has nothing to block. The script is
+[right here](install.sh) if you want to read it first; it uses nothing but
+tools that ship with macOS.
+
+### The manual way
+
+Download `MenuClaude.dmg` from the [latest release](../../releases/latest),
+open it, and drag MenuClaude onto Applications.
 
 <img src="docs/images/dmg-window.png" width="480" alt="The DMG window">
 
-### 2. First launch: right-click → Open
+Then macOS will refuse to open it, saying it *"cannot verify that MenuClaude is
+free of malware"*, offering only **Move to Trash** and **Done**. The app is
+fine — it simply isn't signed by a registered Apple developer. To let it
+through:
 
-**This step matters.** MenuClaude is not signed by a registered Apple developer,
-so a normal double-click makes macOS refuse to open it — sometimes with a
-message suggesting the app is damaged. It isn't.
+**System Settings → Privacy & Security →** scroll down to Security → next to
+*"MenuClaude was blocked…"* click **Open Anyway** → confirm.
 
-Open your Applications folder, **right-click MenuClaude, choose Open**, then
-confirm in the dialog. You only ever have to do this once; afterwards it opens
-normally.
+> Older guides say to right-click the app and choose Open. **That stopped
+> working in macOS 15 Sequoia**: for unsigned apps the shortcut no longer
+> appears, and System Settings is the only way through without a Terminal.
+> Signing an app so macOS trusts it on sight needs an Apple Developer Program
+> membership (99 USD/year), which this free tool doesn't have.
 
-> Why: signing an app so macOS trusts it on first launch requires an Apple
-> Developer Program membership (99 USD/year). This is a free tool shared between
-> friends, so it isn't signed. The right-click is macOS's built-in way of saying
-> "I know where this came from."
+### Then
 
-### 3. Allow Keychain access — choose "Always Allow"
+When macOS asks for Keychain access, choose **"Always Allow"**, not "Allow".
+"Allow" grants a single read and the prompt keeps coming back; "Always Allow"
+adds the app to the authorised list.
 
-MenuClaude reads the OAuth token that Claude Code stores in your login Keychain,
-because that's what proves to Anthropic which account to report usage for. macOS
-will ask permission the first time.
-
-**Choose "Always Allow", not "Allow".** "Allow" grants a single read and the
-prompt comes back; "Always Allow" adds the app to the authorised list and you
-never see it again.
-
-### 4. Allow notifications (optional)
-
-If you want alerts when you approach your limits, accept the notification
-prompt. You can change your mind later from **Alerts** in the menu.
-
-### 5. Launch at login (optional)
-
-Right-click the menu bar icon → **Launch at login**.
+Optionally accept notifications (for the threshold alerts), and turn on
+**Launch at login** from the menu.
 
 The icon lives in the menu bar, top right. It never appears in the Dock.
 **Left-click** opens the panel, **right-click** opens the options.
+
+Updates from here on are handled by the app itself — see
+[Updating](#updating).
 
 ## Where the data comes from
 
@@ -143,6 +149,19 @@ what stops macOS from demanding the right-click-Open dance on every update; it
 comes over HTTPS from this repository's own releases and its version is checked
 before anything is replaced. If MenuClaude is somewhere it cannot write, it
 says so and asks you to move it to Applications.
+
+### How often macOS asks for the Keychain
+
+The authorisation is tied to the *identity of the signed binary*. With an ad-hoc
+signature that identity is the binary's hash, so every new build is a stranger:
+you get the prompt once on first install and once more after each self-update.
+Choosing "Always Allow" each time is all it takes.
+
+To make the grant permanent across updates, sign your builds with a personal
+certificate — see [Build from source](#build-from-source).
+
+Note also that reading the entry from a Terminal (`security find-generic-password`)
+prompts separately, as `security` is a different program.
 
 ## Privacy
 
@@ -225,10 +244,13 @@ in the meantime.
 app now allows one manual retry per waiting period and ignores the rest. The
 wait also survives quitting and reopening the app.
 
-### macOS says the app is damaged
+### macOS says it can't verify the app
 
-It isn't — it's the unsigned-app message. Right-click the app → **Open**. See
-[step 2](#2-first-launch-right-click--open).
+Expected: it isn't signed by a registered Apple developer. Either use the
+[Terminal installer](#the-easy-way-recommended), which avoids the block
+entirely, or go to **System Settings → Privacy & Security → Open Anyway**.
+
+Right-clicking and choosing Open no longer works on macOS 15 and later.
 
 ### Notifications don't arrive
 

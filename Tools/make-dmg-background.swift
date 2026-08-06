@@ -107,9 +107,11 @@ func draw(scale: CGFloat) -> Data? {
     ).draw(in: NSRect(x: arrowStart.x, y: slotCenterY() + 10, width: arrowEnd.x - arrowStart.x, height: 30))
 
     // I due passi, sotto le icone: il secondo è quello che salva dalle domande.
+    // Da macOS 15 il clic destro → Apri non aggira più il blocco per le app
+    // non firmate: l'unica strada senza Terminale è Impostazioni di Sistema.
     let steps: [(String, String)] = [
         ("1", "Trascina MenuClaude su Applicazioni\nDrag MenuClaude onto Applications"),
-        ("2", "Primo avvio: clic destro sull'app → Apri\nFirst launch: right-click the app → Open"),
+        ("2", "Se macOS la blocca: Impostazioni di Sistema › Privacy e Sicurezza › «Apri comunque»\nIf macOS blocks it: System Settings › Privacy & Security › \"Open Anyway\""),
     ]
     var y: CGFloat = 118
     for (number, text) in steps {
@@ -131,15 +133,15 @@ func draw(scale: CGFloat) -> Data? {
         NSAttributedString(
             string: text,
             attributes: [
-                .font: NSFont.systemFont(ofSize: 12, weight: .regular),
+                .font: NSFont.systemFont(ofSize: 11, weight: .regular),
                 .foregroundColor: ink,
             ]
-        ).draw(in: NSRect(x: 130, y: y - 14, width: 420, height: 34))
+        ).draw(in: NSRect(x: 130, y: y - 15, width: 470, height: 36))
         y -= 52
     }
 
     NSAttributedString(
-        string: "Serve aver fatto login almeno una volta con Claude Code  ·  Requires signing in to Claude Code at least once",
+        string: "Senza blocchi: un solo comando da Terminale, nel README  ·  No blocks: one Terminal command, in the README",
         attributes: [
             .font: NSFont.systemFont(ofSize: 10, weight: .regular),
             .foregroundColor: faded,
