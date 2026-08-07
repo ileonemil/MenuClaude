@@ -135,6 +135,37 @@ final class AlertCenter {
 
     // MARK: - Soglie
 
+    /// Due letture della stessa finestra riportano l'istante di reset con
+    /// qualche decimo di secondo di scarto: il server non è preciso al
+    /// millisecondo. Confrontarlo alla virgola faceva sembrare nuova ogni
+    /// finestra, azzerando la memoria e rimandando lo stesso avviso a ogni giro.
+    private static let sameWindowTolerance: TimeInterval = 300
+
+    /// Distanza minima fra due avvisi dello stesso tipo. È una rete di
+    /// sicurezza: qualunque cosa sfugga alla logica delle finestre, non si
+    /// trasforma in una raffica di notifiche.
+    private static let minimumRepeat: TimeInterval = 1800
+
+    private func windowChanged(key: String, resetsAt: Date?) -> Bool {
+        let current = resetsAt?.timeIntervalSince1970 ?? 0
+        guard let stored = defaults.object(forKey: key) as? Double else {
+            // Prima osservazione: è l'inizio, non un cambio di finestra.
+            defaults.set(current, forKey: key)
+            return false
+        }
+        guard abs(stored - current) > AlertCenter.sameWindowTolerance else { return false }
+        defaults.set(current, forKey: key)
+        return true
+    }
+
+    private func deliverOnce(_ title: String, _ body: String, _ kind: AlertKind) {
+        let key = "alert.\(kind.rawValue).lastSent"
+        let last = defaults.double(forKey: key)
+        if last > 0, Date().timeIntervalSince1970 - last < AlertCenter.minimumRepeat { return }
+        defaults.set(Date().timeIntervalSince1970, forKey: key)
+        deliver(title, body, kind.rawValue)
+    }
+
     private func check(
         limit: UsageLimit,
         kind: AlertKind,
@@ -146,12 +177,14 @@ final class AlertCenter {
         let firedKey = "alert.\(kind.rawValue).fired"
         let reachedKey = "alert.\(limit.kind).reached"
 
-        // Una nuova finestra (reset diverso) cancella la memoria della vecchia.
-        let window = limit.resetsAt.map { String(Int($0.timeIntervalSince1970)) } ?? "-"
-        if defaults.string(forKey: windowKey) != window {
-            defaults.set(window, forKey: windowKey)
+        // Una nuova finestra cancella la memoria della vecchia — compresa la
+        // pausa fra due avvisi uguali, che altrimenti soffocherebbe il primo
+        // avviso legittimo della finestra appena aperta.
+        if windowChanged(key: windowKey, resetsAt: limit.resetsAt) {
             defaults.set(false, forKey: firedKey)
             defaults.set(false, forKey: reachedKey)
+            defaults.removeObject(forKey: "alert.\(kind.rawValue).lastSent")
+            defaults.removeObject(forKey: "alert.\(AlertKind.limitReached.rawValue).lastSent")
         }
 
         if settings.isAlertEnabled(kind), limit.percent >= threshold, !defaults.bool(forKey: firedKey) {
@@ -161,7 +194,7 @@ final class AlertCenter {
                 let resets = L.t("si azzera tra \(remaining)", "resets in \(remaining)")
                 body = body.isEmpty ? resets.prefix(1).uppercased() + resets.dropFirst() : body + " · " + resets
             }
-            deliver(title, body, kind.rawValue)
+            deliverOnce(title, body, kind)
         }
 
         if settings.isAlertEnabled(.limitReached), limit.percent >= 100, !defaults.bool(forKey: reachedKey) {
@@ -170,18 +203,16 @@ final class AlertCenter {
             if let remaining = Format.countdown(to: limit.resetsAt) {
                 body += L.t(" · si azzera tra \(remaining)", " · resets in \(remaining)")
             }
-            deliver("\(limit.label): 100%", body, AlertKind.limitReached.rawValue)
+            deliverOnce("\(limit.label): 100%", body, .limitReached)
         }
     }
 
     private func checkReset(_ session: UsageLimit) {
-        let key = "alert.sessionReset.window"
-        guard let resetsAt = session.resetsAt else { return }
-        let window = String(Int(resetsAt.timeIntervalSince1970))
-        let previous = defaults.string(forKey: key)
-        defaults.set(window, forKey: key)
-
-        guard settings.isAlertEnabled(.sessionReset), let previous = previous, previous != window else { return }
+        guard session.resetsAt != nil else { return }
+        // Stessa tolleranza: senza, ogni oscillazione del timestamp sarebbe
+        // sembrata l'apertura di una nuova sessione.
+        let changed = windowChanged(key: "alert.sessionReset.window", resetsAt: session.resetsAt)
+        guard changed, settings.isAlertEnabled(.sessionReset) else { return }
         deliver(
             L.t("Sessione azzerata", "Session reset"),
             L.t("Cinque ore di quota di nuovo disponibili", "Five hours of quota available again"),

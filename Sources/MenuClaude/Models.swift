@@ -89,12 +89,24 @@ struct UsageSnapshot {
 
     /// Stesse percentuali e stesse finestre: la fotografia non è cambiata.
     /// Serve a capire quando conviene rallentare le interrogazioni.
+    ///
+    /// Gli istanti di reset vanno confrontati con tolleranza: il server li
+    /// riporta con qualche decimo di secondo di scarto fra una risposta e
+    /// l'altra, e preteso il confronto esatto nessuna risposta risultava mai
+    /// uguale alla precedente — così il rallentamento non entrava mai in gioco.
     func isEquivalent(to other: UsageSnapshot) -> Bool {
         guard limits.count == other.limits.count else { return false }
         for (mine, theirs) in zip(limits, other.limits) {
             if mine.kind != theirs.kind { return false }
             if abs(mine.percent - theirs.percent) > 0.01 { return false }
-            if mine.resetsAt != theirs.resetsAt { return false }
+            switch (mine.resetsAt, theirs.resetsAt) {
+            case (nil, nil):
+                break
+            case let (a?, b?) where abs(a.timeIntervalSince(b)) <= 300:
+                break
+            default:
+                return false
+            }
         }
         return abs((extra?.percent ?? 0) - (other.extra?.percent ?? 0)) <= 0.01
     }
