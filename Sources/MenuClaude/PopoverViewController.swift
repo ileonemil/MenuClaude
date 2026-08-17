@@ -4,6 +4,7 @@ protocol PopoverDelegate: AnyObject {
     func popoverDidRequestRefresh()
     func popoverDidRequestMenu(from view: NSView)
     func popoverDidRequestTokenRenewal()
+    func popoverDidRequestAlarmToggle()
 }
 
 /// Il pannello che compare cliccando sull'icona nella barra dei menu.
@@ -21,6 +22,7 @@ final class PopoverViewController: NSViewController {
     private let refreshButton = NSButton()
     private let menuButton = NSButton()
     private let renewButton = NSButton()
+    private let alarmButton = NSButton()
     /// Creata qui e non in `loadView`: `render` può arrivare prima che la
     /// vista sia stata caricata, e un optional implicito qui significava un
     /// crash all'avvio.
@@ -62,8 +64,9 @@ final class PopoverViewController: NSViewController {
 
         configure(button: refreshButton, symbol: "arrow.clockwise", tooltip: L.t("Aggiorna adesso", "Refresh now"), action: #selector(refreshClicked))
         configure(button: menuButton, symbol: "ellipsis.circle", tooltip: L.t("Opzioni", "Options"), action: #selector(menuClicked))
+        configure(button: alarmButton, symbol: "bell", tooltip: "", action: #selector(alarmClicked))
 
-        let header = NSStackView(views: [titleLabel, planLabel, NSView(), refreshButton, menuButton])
+        let header = NSStackView(views: [titleLabel, planLabel, NSView(), alarmButton, refreshButton, menuButton])
         header.orientation = .horizontal
         header.spacing = 6
         header.alignment = .centerY
@@ -237,6 +240,32 @@ final class PopoverViewController: NSViewController {
 
     @objc private func renewClicked() {
         delegate?.popoverDidRequestTokenRenewal()
+    }
+
+    @objc private func alarmClicked() {
+        delegate?.popoverDidRequestAlarmToggle()
+    }
+
+    /// La campanella è piena quando la sveglia è armata, e il tooltip dice a
+    /// che ora suonerà: senza, non ci sarebbe modo di saperlo.
+    func showAlarm(at date: Date?, resetsAt: Date?) {
+        let armed = date != nil
+        alarmButton.image = NSImage(
+            systemSymbolName: armed ? "bell.fill" : "bell",
+            accessibilityDescription: nil
+        )
+        alarmButton.contentTintColor = armed ? Theme.accent : .secondaryLabelColor
+        if let date = date {
+            alarmButton.toolTip = L.t("Ti avviso al reset, \(Format.resetStamp(date) ?? "") — clic per annullare",
+                                      "You'll be alerted at the reset, \(Format.resetStamp(date) ?? "") — click to cancel")
+        } else if let resetsAt = resetsAt, let remaining = Format.countdown(to: resetsAt) {
+            alarmButton.toolTip = L.t("Avvisami quando la sessione si azzera (fra \(remaining))",
+                                      "Alert me when the session resets (in \(remaining))")
+        } else {
+            alarmButton.toolTip = L.t("Avvisami quando la sessione si azzera",
+                                      "Alert me when the session resets")
+        }
+        alarmButton.isEnabled = resetsAt != nil || armed
     }
 
     /// Mostra l'esito del rinnovo al posto del messaggio d'errore.

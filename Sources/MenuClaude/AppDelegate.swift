@@ -29,6 +29,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, PopoverDelegate, NSPop
 
     private let refresher = TokenRefresher()
     private var isRenewing = false
+    /// Il rinnovo automatico non deve poter diventare un ciclo: se dopo un
+    /// tentativo il token è ancora rifiutato, si aspetta prima di riprovare.
+    private var lastAutoRenew = Date.distantPast
+
+    private var alarmDate: Date?
 
     private let updater = Updater()
     private var pendingUpdate: AvailableUpdate?
@@ -82,6 +87,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, PopoverDelegate, NSPop
         scheduleFetchTimer()
         scheduleStatusTimer()
         scheduleUpdateTimer()
+        syncAlarmState()
 
         uiTimer = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] _ in
             self?.tick()
@@ -318,6 +324,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, PopoverDelegate, NSPop
                 if case .rateLimited(let retryAfter) = error {
                     self.backoff.record(suggested: retryAfter, escalate: !force)
                 }
+                self.autoRenewIfNeeded(after: error)
             }
             self.backoff.save()
             self.alerts.evaluate(snapshot: self.snapshot)
@@ -329,6 +336,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, PopoverDelegate, NSPop
                 retryAt: self.backoff.retryAt,
                 serverStatus: self.serverStatus
             )
+            self.panel.showAlarm(at: self.alarmDate, resetsAt: self.snapshot?.session?.resetsAt)
             self.scheduleFetchTimer()
         }
     }
@@ -525,6 +533,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate, PopoverDelegate, NSPop
         menu.addItem(item(L.t("Aggiorna adesso", "Refresh now"), #selector(menuRefresh), key: "r"))
         menu.addItem(item(L.t("Rinnova il token", "Renew the token"), #selector(menuRenewToken), key: ""))
 
+        if let resetsAt = snapshot?.session?.resetsAt, resetsAt > Date() {
+            let title: String
+            if let alarmDate = alarmDate {
+                title = L.t("Annulla la sveglia (\(Format.resetStamp(alarmDate) ?? ""))",
+                            "Cancel the alarm (\(Format.resetStamp(alarmDate) ?? ""))")
+            } else {
+                let remaining = Format.countdown(to: resetsAt) ?? ""
+                title = L.t("Avvisami al reset della sessione (fra \(remaining))",
+                            "Alert me when the session resets (in \(remaining))")
+            }
+            let entry = item(title, #selector(menuToggleAlarm), key: "")
+            entry.state = alarmDate != nil ? .on : .off
+            menu.addItem(entry)
+        }
+
         let display = NSMenu()
         for mode in DisplayMode.allCases {
             let entry = item(mode.label, #selector(menuSetDisplay), key: "")
@@ -571,6 +594,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, PopoverDelegate, NSPop
         let languageItem = NSMenuItem(title: L.t("Lingua", "Language"), action: nil, keyEquivalent: "")
         languageItem.submenu = languages
         menu.addItem(languageItem)
+
+        let autoRenew = item(L.t("Rinnova il token automaticamente", "Renew the token automatically"),
+                             #selector(menuToggleAutoRenew), key: "")
+        autoRenew.state = settings.autoRenewToken ? .on : .off
+        menu.addItem(autoRenew)
 
         let login = item(L.t("Avvia al login", "Launch at login"), #selector(menuToggleLogin), key: "")
         login.state = LaunchAtLogin.isEnabled ? .on : .off
@@ -662,6 +690,47 @@ final class AppDelegate: NSObject, NSApplicationDelegate, PopoverDelegate, NSPop
     }
 
     /// Il rinnovo mostra il suo esito nel pannello: se è chiuso, si apre.
+    /// Arma o disarma la sveglia per il reset della sessione.
+    private func toggleSessionAlarm() {
+        if alarmDate != nil {
+            SessionAlarm.cancel()
+            alarmDate = nil
+            panel.showAlarm(at: nil, resetsAt: snapshot?.session?.resetsAt)
+            return
+        }
+        guard let resetsAt = snapshot?.session?.resetsAt, resetsAt > Date() else { return }
+
+        // Serve il permesso alle notifiche: senza, la sveglia non suonerebbe mai.
+        Notifier.shared.requestAuthorization { [weak self] granted in
+            guard let self = self else { return }
+            guard granted else {
+                self.showNotificationProblem()
+                return
+            }
+            SessionAlarm.schedule(at: resetsAt) { fireDate in
+                self.alarmDate = fireDate
+                self.panel.showAlarm(at: fireDate, resetsAt: resetsAt)
+                if fireDate == nil {
+                    self.showUpdateAlert(
+                        title: L.t("Sveglia non impostata", "Alarm not set"),
+                        text: L.t("macOS non ha accettato la notifica programmata.",
+                                  "macOS did not accept the scheduled notification.")
+                    )
+                }
+            }
+        }
+    }
+
+    /// La sveglia sopravvive alla chiusura dell'app, quindi allo stato del
+    /// pulsante si risale da quella davvero in coda nel sistema.
+    private func syncAlarmState() {
+        SessionAlarm.pending { [weak self] date in
+            guard let self = self else { return }
+            self.alarmDate = date
+            self.panel.showAlarm(at: date, resetsAt: self.snapshot?.session?.resetsAt)
+        }
+    }
+
     private func togglePopoverForRenewal() {
         guard !popover.isShown, let button = statusItem.button else { return }
         panel.render(snapshot: snapshot, error: lastError,
@@ -690,6 +759,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, PopoverDelegate, NSPop
     @objc private func menuToggleColor() {
         Settings.shared.colorInMenuBar.toggle()
         renderStatusItem()
+    }
+
+    @objc private func menuToggleAlarm() {
+        toggleSessionAlarm()
+    }
+
+    @objc private func menuToggleAutoRenew() {
+        Settings.shared.autoRenewToken.toggle()
     }
 
     @objc private func menuToggleLogin() {
@@ -785,14 +862,35 @@ final class AppDelegate: NSObject, NSApplicationDelegate, PopoverDelegate, NSPop
 
     func popoverDidRequestTokenRenewal() { renewToken() }
 
+    func popoverDidRequestAlarmToggle() { toggleSessionAlarm() }
+
+    /// Il caso tipico: il Mac torna dallo standby, il token è scaduto da ore e
+    /// nessuno lo ha rinnovato. Invece di lasciare l'app ferma finché non si
+    /// preme il pulsante, ci prova da sola — una volta, e non più spesso di
+    /// ogni cinque minuti.
+    private func autoRenewIfNeeded(after error: UsageError) {
+        guard AutoRenewPolicy.shouldRenew(
+            after: error,
+            enabled: Settings.shared.autoRenewToken,
+            alreadyRenewing: isRenewing,
+            lastAttempt: lastAutoRenew
+        ) else { return }
+        lastAutoRenew = Date()
+        renewToken(automatic: true)
+    }
+
     /// Rinnovo manuale del token. Manuale di proposito: tocca le credenziali di
     /// Claude Code, quindi deve essere un gesto deliberato e riconoscibile.
-    private func renewToken() {
+    private func renewToken(automatic: Bool = false) {
         guard !isRenewing else { return }
         isRenewing = true
         panel.renewalInProgress = true
-        panel.showRenewalState(L.t("Rinnovo del token in corso…", "Renewing the token…"),
-                               busy: true, failed: false)
+        panel.showRenewalState(
+            automatic
+                ? L.t("Token scaduto — lo rinnovo…", "Token expired — renewing…")
+                : L.t("Rinnovo del token in corso…", "Renewing the token…"),
+            busy: true, failed: false
+        )
 
         refresher.refresh { [weak self] result in
             guard let self = self else { return }
@@ -810,6 +908,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, PopoverDelegate, NSPop
 
             case .failure(let error):
                 self.panel.showRenewalState(error.message, busy: false, failed: true)
+                // Questo va detto comunque, anche se il rinnovo era automatico:
+                // in gioco c'è il login di Claude Code.
                 if case .tokenRenewedButNotSaved = error { self.warnAboutUnsavedToken() }
             }
         }

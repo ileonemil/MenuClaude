@@ -119,18 +119,37 @@ endpoint e con lo stesso client id della CLI, e riscrive il risultato al suo
 posto — il resto della voce, comprese le credenziali dei server MCP che Claude
 Code tiene lì accanto, resta intatto.
 
-Il rinnovo è **manuale** di proposito. Il server *ruota* il refresh token: un
-rinnovo invalida il precedente, quindi se quello nuovo non riuscisse a essere
-riscritto, la copia che ha Claude Code sarebbe morta. MenuClaude ritenta la
-scrittura e, se fallisce comunque, te lo dice con un avviso che ti manda a
-`claude auth login` invece di fallire in silenzio. Senza premere il pulsante non
-succede nulla.
+**Adesso succede da solo.** Quando una richiesta torna indietro dicendo che il
+token è scaduto — il caso tipico dopo che il Mac ha dormito per ore —
+MenuClaude lo rinnova e riprova, senza che tu tocchi niente. Ci prova una volta
+e poi aspetta cinque minuti prima di riprovare, così un rinnovo che non risolve
+non si trasforma in una raffica di richieste. Si disattiva con **Rinnova il
+token automaticamente** nel menu.
 
-C'è anche `Rinnova il token` nel menu, e da Terminale:
+Il pulsante **Rinnova** e la voce `Rinnova il token` restano, per quando vuoi
+forzarlo, e da Terminale:
 
 ```bash
 /Applications/MenuClaude.app/Contents/MacOS/MenuClaude --renew-token
 ```
+
+Una cosa da sapere: il server *ruota* il refresh token, cioè un rinnovo invalida
+il precedente. Se quello nuovo non riuscisse a essere riscritto, la copia che ha
+Claude Code sarebbe morta. MenuClaude ritenta la scrittura e, se fallisce
+comunque, te lo dice con un avviso che ti manda a `claude auth login` invece di
+fallire in silenzio.
+
+## La sveglia di fine sessione
+
+La campanella nel pannello imposta una sveglia per il momento in cui la sessione
+da cinque ore si azzera — un altro clic la annulla. C'è anche nel menu, che
+mostra quanto manca.
+
+È una sveglia di MenuClaude, non un timer dell'app Orologio: Clock non si può
+pilotare dall'esterno, non ha dizionario AppleScript e il suo schema
+`clock-timer:` apre soltanto la scheda Timer senza accettare una durata. In
+pratica il risultato è lo stesso — una notifica nell'istante esatto, che arriva
+anche se nel frattempo hai chiuso MenuClaude e anche se il Mac ha dormito.
 
 ## Aggiornamenti
 
@@ -188,7 +207,9 @@ Clic destro sull'icona:
 | **Icona a colori** | Disattivala per tenere l'icona monocromatica come le altre di sistema |
 | **Avvia al login** | Installa un LaunchAgent in `~/Library/LaunchAgents` |
 | **Cerca aggiornamenti…** | Diventa **Aggiorna a x.y.z** quando esce una release |
-| **Rinnova il token** | Rinnova l'access token di Claude — vedi [sopra](#il-pulsante-rinnova) |
+| **Rinnova il token** | Forza il rinnovo adesso — vedi [sopra](#il-pulsante-rinnova) |
+| **Rinnova il token automaticamente** | Si riprende da solo quando il token scade (attivo di default) |
+| **Avvisami al reset della sessione** | Imposta la [sveglia di fine sessione](#la-sveglia-di-fine-sessione) |
 
 Il countdown scorre in locale ogni secondo. La rete viene usata solo alla
 frequenza scelta, all'apertura del pannello se il dato è vecchio, e al risveglio
@@ -313,6 +334,7 @@ Sources/MenuClaude/
   LaunchAtLogin.swift         LaunchAgent
   TokenRefresher.swift        rinnovo del token OAuth e riscrittura
   Updater.swift               aggiornamento in-app dalle release GitHub
+  SessionAlarm.swift          la sveglia per il reset della sessione
   Diagnostics.swift           --diagnose, --renew-token, --update, --test-notification
   Preview.swift               --preview <cartella>
 Tools/make-icon.sh            rigenera Resources/AppIcon.icns

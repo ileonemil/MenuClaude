@@ -34,6 +34,30 @@ enum RefreshError: Error {
     }
 }
 
+/// Quando ha senso rinnovare da soli, senza aspettare il pulsante.
+enum AutoRenewPolicy {
+    /// Dopo un tentativo si aspetta: se il rinnovo non risolve, riprovare a
+    /// ogni giro trasformerebbe un problema in una raffica di richieste.
+    static let cooldown: TimeInterval = 300
+
+    static func shouldRenew(
+        after error: UsageError,
+        enabled: Bool,
+        alreadyRenewing: Bool,
+        lastAttempt: Date,
+        now: Date = Date()
+    ) -> Bool {
+        switch error {
+        case .tokenExpired, .unauthorized:
+            break
+        default:
+            return false
+        }
+        guard enabled, !alreadyRenewing else { return false }
+        return now.timeIntervalSince(lastAttempt) > cooldown
+    }
+}
+
 /// Rinnova l'access token usando il refresh token che Claude Code tiene nel
 /// portachiavi, con lo stesso endpoint e lo stesso client id della CLI.
 ///
@@ -41,11 +65,11 @@ enum RefreshError: Error {
 /// nell'app desktop o dal web se la vedrebbe scadere ogni poche ore senza che
 /// nessuno la aggiorni.
 ///
-/// È un'operazione delicata e per questo resta manuale. Il server può *ruotare*
-/// il refresh token, cioè restituirne uno nuovo e invalidare il vecchio: se
-/// succede e non riusciamo a riscriverlo, il login di Claude Code si rompe.
-/// Perciò la riscrittura viene ritentata e, se fallisce comunque, l'errore è
-/// esplicito invece che silenzioso.
+/// Il server *ruota* il refresh token, cioè ne restituisce uno nuovo e invalida
+/// il vecchio: se succede e non riusciamo a riscriverlo, il login di Claude Code
+/// si rompe. Perciò la riscrittura viene ritentata e, se fallisce comunque,
+/// l'errore è esplicito invece che silenzioso — anche quando il rinnovo è
+/// partito da solo.
 final class TokenRefresher {
     private let tokenURL = URL(string: "https://platform.claude.com/v1/oauth/token")!
     private let clientID = "9d1c250a-e61b-44d9-88ed-5944d1962f5e"

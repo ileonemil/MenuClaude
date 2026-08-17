@@ -42,6 +42,7 @@ final class Settings {
         static let alertThreshold = "alertThreshold"
         static let language = "language"
         static let checkForUpdates = "checkForUpdates"
+        static let autoRenewToken = "autoRenewToken"
         static func alert(_ kind: AlertKind) -> String { "alertEnabled.\(kind.rawValue)" }
     }
 
@@ -55,6 +56,7 @@ final class Settings {
             Key.alertThreshold: 80.0,
             Key.language: Language.system.rawValue,
             Key.checkForUpdates: true,
+            Key.autoRenewToken: true,
         ]
         for kind in AlertKind.allCases {
             registered[Key.alert(kind)] = kind.enabledByDefault
@@ -89,6 +91,12 @@ final class Settings {
     var language: Language {
         get { Language(rawValue: defaults.integer(forKey: Key.language)) ?? .system }
         set { defaults.set(newValue.rawValue, forKey: Key.language) }
+    }
+
+    /// Rinnova da sé l'access token quando scade, senza aspettare il pulsante.
+    var autoRenewToken: Bool {
+        get { defaults.bool(forKey: Key.autoRenewToken) }
+        set { defaults.set(newValue, forKey: Key.autoRenewToken) }
     }
 
     /// Controllo automatico delle nuove versioni su GitHub.

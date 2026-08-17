@@ -18,7 +18,34 @@ enum Diagnostics {
                 )
                 print(L.t("→ Notifica inviata: dovrebbe comparire in alto a destra.",
                           "→ Notification sent: it should appear in the top right."))
-                status = 0
+
+                // Anche la sveglia al reset è una notifica, ma programmata:
+                // vale la pena verificare che il sistema la accetti in coda.
+                SessionAlarm.schedule(at: Date().addingTimeInterval(60)) { fireDate in
+                    guard fireDate != nil else {
+                        print(L.t("✗ Sveglia programmata rifiutata", "✗ Scheduled alarm refused"))
+                        done = true
+                        return
+                    }
+                    SessionAlarm.pending { pending in
+                        if pending != nil {
+                            print(L.t("✓ Sveglia programmata accettata e in coda",
+                                      "✓ Scheduled alarm accepted and queued"))
+                            status = 0
+                        } else {
+                            print(L.t("✗ Sveglia accettata ma non risulta in coda",
+                                      "✗ Alarm accepted but not queued"))
+                        }
+                        SessionAlarm.cancel()
+                        SessionAlarm.pending { after in
+                            print(after == nil
+                                ? L.t("✓ Annullamento riuscito", "✓ Cancellation worked")
+                                : L.t("✗ Annullamento non riuscito", "✗ Cancellation failed"))
+                            done = true
+                        }
+                    }
+                }
+                return
             } else {
                 print(L.t("✗ Permesso negato", "✗ Permission denied"))
                 print("  System Settings › Notifications › MenuClaude")
