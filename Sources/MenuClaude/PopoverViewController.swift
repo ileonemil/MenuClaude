@@ -36,6 +36,8 @@ final class PopoverViewController: NSViewController {
     private var snapshot: UsageSnapshot?
     private var lastError: UsageError?
     private var retryAt: Date?
+    /// Frasi di proiezione, per tipo di quota. Calcolate fuori: qui si mostrano.
+    var forecasts: [String: String] = [:]
     /// Mentre il rinnovo è in corso il messaggio non va sovrascritto dal tick.
     var renewalInProgress = false
 
@@ -184,7 +186,10 @@ final class PopoverViewController: NSViewController {
             }
         }
 
-        for (key, limit) in wanted { rows[key]?.apply(limit) }
+        for (key, limit) in wanted {
+            rows[key]?.apply(limit)
+            rows[key]?.setForecast(forecasts[limit.kind])
+        }
 
         if let extra = snapshot.extra, let row = rows["__extra"] {
             row.apply(

@@ -85,4 +85,9 @@ echo "→ Compressione"
 rm -f "$DMG"
 hdiutil convert "$WORK/rw.dmg" -format UDZO -imagekey zlib-level=9 -o "$DMG" >/dev/null
 
+# Il checksum va accanto al DMG nella release: l'app lo scarica e lo confronta
+# prima di installare, così un download corrotto o manomesso non passa.
+( cd "$(dirname "$DMG")" && shasum -a 256 "$(basename "$DMG")" > "$(basename "$DMG").sha256" )
+
 echo "✓ Pronto: $DMG ($(du -h "$DMG" | cut -f1)) — versione $VERSION"
+echo "  checksum: $(cut -d' ' -f1 "$DMG.sha256")"

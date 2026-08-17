@@ -232,3 +232,19 @@ enum Format {
         return L.t("\(s / 3600)h fa", "\(s / 3600)h ago")
     }
 }
+
+extension UsageError {
+    /// Nome stabile per gli script: `message` è tradotto e può cambiare.
+    var code: String {
+        switch self {
+        case .noCredentials: return "no_credentials"
+        case .keychainDenied: return "keychain_denied"
+        case .tokenExpired: return "token_expired"
+        case .unauthorized: return "unauthorized"
+        case .rateLimited: return "rate_limited"
+        case .http(let status): return "http_\(status)"
+        case .network: return "network"
+        case .malformed: return "malformed"
+        }
+    }
+}

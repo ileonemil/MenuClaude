@@ -1,16 +1,22 @@
 import Cocoa
+import CommonCrypto
 
 struct AvailableUpdate {
     var version: String
     var notes: String
     var downloadURL: URL
     var size: Int
+    /// SHA-256 atteso del DMG, preso dall'asset `.sha256` della release.
+    /// Assente nelle release più vecchie, che non lo pubblicavano.
+    var checksumURL: URL?
 }
 
 enum UpdateError: Error {
     case network(String)
     case malformed
     case noAsset
+    case checksumUnavailable
+    case checksumMismatch(expected: String, actual: String)
     case notWritable(String)
     case mountFailed
     case contentMismatch
@@ -24,6 +30,12 @@ enum UpdateError: Error {
             return L.t("Risposta di GitHub non riconosciuta", "Unrecognised response from GitHub")
         case .noAsset:
             return L.t("La release non contiene un DMG", "The release has no DMG attached")
+        case .checksumUnavailable:
+            return L.t("Il checksum pubblicato non è leggibile: aggiornamento annullato",
+                       "The published checksum could not be read: update cancelled")
+        case .checksumMismatch:
+            return L.t("Il file scaricato non corrisponde al checksum pubblicato",
+                       "The downloaded file does not match the published checksum")
         case .notWritable(let path):
             return L.t("Non ho i permessi per aggiornare \(path). Sposta MenuClaude in Applicazioni.",
                        "No permission to update \(path). Move MenuClaude to Applications.")
@@ -105,11 +117,16 @@ final class Updater {
             let url = URL(string: urlString)
         else { return nil }
 
+        let checksum = assets.first {
+            ($0["name"] as? String)?.lowercased().hasSuffix(".dmg.sha256") == true
+        }
+
         return AvailableUpdate(
             version: tag.hasPrefix("v") ? String(tag.dropFirst()) : tag,
             notes: (root["body"] as? String) ?? "",
             downloadURL: url,
-            size: (asset["size"] as? Int) ?? 0
+            size: (asset["size"] as? Int) ?? 0,
+            checksumURL: (checksum?["browser_download_url"] as? String).flatMap(URL.init(string:))
         )
     }
 
@@ -149,9 +166,42 @@ final class Updater {
                 return
             }
 
+            if let problem = self.verifyChecksum(of: location, update: update) {
+                DispatchQueue.main.async { completion(problem) }
+                return
+            }
+
             let result = self.unpackAndSwap(dmg: location, update: update, destination: destination)
             DispatchQueue.main.async { completion(result) }
         }.resume()
+    }
+
+    /// Confronta lo SHA-256 del file scaricato con quello pubblicato accanto
+    /// alla release. Non protegge da chi controlla il repository — pubblicherebbe
+    /// anche il checksum — ma coglie un download corrotto o troncato e chiude la
+    /// finestra a un proxy che sostituisca il solo binario.
+    ///
+    /// Le release senza file `.sha256` restano installabili: rifiutarle
+    /// bloccherebbe l'aggiornamento proprio a chi ha una versione vecchia.
+    private func verifyChecksum(of file: URL, update: AvailableUpdate) -> UpdateError? {
+        guard let checksumURL = update.checksumURL else { return nil }
+        guard
+            let published = try? String(contentsOf: checksumURL, encoding: .utf8),
+            let expected = published.split(separator: " ").first.map(String.init)?.lowercased(),
+            expected.count == 64
+        else { return .checksumUnavailable }
+
+        guard let data = try? Data(contentsOf: file, options: .mappedIfSafe) else { return .malformed }
+        let actual = Updater.sha256(data)
+        return actual == expected ? nil : .checksumMismatch(expected: expected, actual: actual)
+    }
+
+    static func sha256(_ data: Data) -> String {
+        var hash = [UInt8](repeating: 0, count: Int(CC_SHA256_DIGEST_LENGTH))
+        data.withUnsafeBytes { buffer in
+            _ = CC_SHA256(buffer.baseAddress, CC_LONG(buffer.count), &hash)
+        }
+        return hash.map { String(format: "%02x", $0) }.joined()
     }
 
     private func unpackAndSwap(dmg: URL, update: AvailableUpdate, destination: URL) -> UpdateError? {

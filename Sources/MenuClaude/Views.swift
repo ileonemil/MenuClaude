@@ -34,6 +34,8 @@ final class LimitRowView: NSView {
     private let bar = BarView()
     private let resetLabel = LimitRowView.label(size: 10, weight: .regular, color: .tertiaryLabelColor)
     private let stampLabel = LimitRowView.label(size: 10, weight: .regular, color: .tertiaryLabelColor)
+    /// Terza riga, presente solo quando c'è una proiezione da mostrare.
+    private let forecastLabel = LimitRowView.label(size: 10, weight: .regular, color: .tertiaryLabelColor)
 
     private var resetsAt: Date?
 
@@ -63,7 +65,10 @@ final class LimitRowView: NSView {
         bottom.spacing = 6
         bottom.alignment = .firstBaseline
 
-        let stack = NSStackView(views: [top, bar, bottom])
+        forecastLabel.isHidden = true
+        forecastLabel.textColor = Theme.accent
+
+        let stack = NSStackView(views: [top, bar, bottom, forecastLabel])
         stack.orientation = .vertical
         stack.spacing = 5
         stack.alignment = .leading
@@ -78,6 +83,7 @@ final class LimitRowView: NSView {
             top.widthAnchor.constraint(equalTo: stack.widthAnchor),
             bottom.widthAnchor.constraint(equalTo: stack.widthAnchor),
             bar.widthAnchor.constraint(equalTo: stack.widthAnchor),
+            forecastLabel.widthAnchor.constraint(equalTo: stack.widthAnchor),
         ])
     }
 
@@ -92,6 +98,11 @@ final class LimitRowView: NSView {
         resetsAt = limit.resetsAt
         stampLabel.stringValue = Format.resetStamp(limit.resetsAt) ?? ""
         tick()
+    }
+
+    func setForecast(_ text: String?) {
+        forecastLabel.stringValue = text ?? ""
+        forecastLabel.isHidden = text == nil
     }
 
     func setTitle(_ text: String) { titleLabel.stringValue = text }

@@ -35,6 +35,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, PopoverDelegate, NSPop
 
     private var alarmDate: Date?
 
+    /// Costruite alla prima apertura: finché non si guardano non esistono.
+    private var settingsWindow: SettingsWindowController?
+    private var analyticsWindow: AnalyticsWindowController?
+
     private let updater = Updater()
     private var pendingUpdate: AvailableUpdate?
     private var updateTimer: Timer?
@@ -92,6 +96,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, PopoverDelegate, NSPop
         uiTimer = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] _ in
             self?.tick()
         }
+
+        NSAppleEventManager.shared().setEventHandler(
+            self,
+            andSelector: #selector(handleURLEvent(_:reply:)),
+            forEventClass: AEEventClass(kInternetEventClass),
+            andEventID: AEEventID(kAEGetURL)
+        )
 
         NSWorkspace.shared.notificationCenter.addObserver(
             self,
@@ -308,6 +319,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, PopoverDelegate, NSPop
             self.isFetching = false
             switch result {
             case .success(let fresh):
+                UsageHistory.shared.record(fresh)
+                self.updateForecasts(for: fresh)
                 // Se nulla è cambiato, la prossima interrogazione può aspettare.
                 if let previous = self.snapshot, previous.isEquivalent(to: fresh) {
                     self.idleRounds += 1
@@ -515,7 +528,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, PopoverDelegate, NSPop
 
     private func buildMenu() -> NSMenu {
         let menu = NSMenu()
-        let settings = Settings.shared
 
         if let snapshot = snapshot {
             for limit in [snapshot.session, snapshot.weekly].compactMap({ $0 }) {
@@ -548,62 +560,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, PopoverDelegate, NSPop
             menu.addItem(entry)
         }
 
-        let display = NSMenu()
-        for mode in DisplayMode.allCases {
-            let entry = item(mode.label, #selector(menuSetDisplay), key: "")
-            entry.tag = mode.rawValue
-            entry.state = settings.displayMode == mode ? .on : .off
-            display.addItem(entry)
-        }
-        let displayItem = NSMenuItem(title: L.t("Cosa mostrare", "What to show"), action: nil, keyEquivalent: "")
-        displayItem.submenu = display
-        menu.addItem(displayItem)
-
-        let intervals = NSMenu()
-        for value in Settings.refreshChoices {
-            let entry = item(L.t("Ogni \(Settings.refreshLabel(value))", "Every \(Settings.refreshLabel(value))"),
-                             #selector(menuSetInterval), key: "")
-            entry.tag = Int(value)
-            entry.state = abs(settings.refreshInterval - value) < 0.5 ? .on : .off
-            intervals.addItem(entry)
-        }
-        let intervalItem = NSMenuItem(title: L.t("Frequenza aggiornamento", "Update frequency"), action: nil, keyEquivalent: "")
-        intervalItem.submenu = intervals
-        menu.addItem(intervalItem)
-
-        menu.addItem(alertsMenuItem())
-
-        let ring = item(L.t("Mostra anello", "Show ring"), #selector(menuToggleRing), key: "")
-        ring.state = settings.showRing ? .on : .off
-        // Gli anelli concentrici sono l'icona: l'opzione non si applica.
-        ring.isEnabled = !settings.displayMode.usesOwnIcon
-        menu.addItem(ring)
-
-        let color = item(L.t("Icona a colori", "Coloured icon"), #selector(menuToggleColor), key: "")
-        color.state = settings.colorInMenuBar ? .on : .off
-        color.isEnabled = settings.showRing || settings.displayMode.usesOwnIcon
-        menu.addItem(color)
-
-        let languages = NSMenu()
-        for language in Language.allCases {
-            let entry = item(language.label, #selector(menuSetLanguage), key: "")
-            entry.tag = language.rawValue
-            entry.state = settings.language == language ? .on : .off
-            languages.addItem(entry)
-        }
-        let languageItem = NSMenuItem(title: L.t("Lingua", "Language"), action: nil, keyEquivalent: "")
-        languageItem.submenu = languages
-        menu.addItem(languageItem)
-
-        let autoRenew = item(L.t("Rinnova il token automaticamente", "Renew the token automatically"),
-                             #selector(menuToggleAutoRenew), key: "")
-        autoRenew.state = settings.autoRenewToken ? .on : .off
-        menu.addItem(autoRenew)
-
-        let login = item(L.t("Avvia al login", "Launch at login"), #selector(menuToggleLogin), key: "")
-        login.state = LaunchAtLogin.isEnabled ? .on : .off
-        menu.addItem(login)
-
+        menu.addItem(.separator())
+        menu.addItem(item(L.t("Statistiche…", "Analytics…"), #selector(menuShowAnalytics), key: ""))
+        menu.addItem(item(L.t("Impostazioni…", "Settings…"), #selector(menuShowSettings), key: ","))
         menu.addItem(.separator())
 
         if let update = pendingUpdate {
@@ -629,49 +588,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, PopoverDelegate, NSPop
         menu.addItem(version)
         menu.addItem(item(L.t("Esci da MenuClaude", "Quit MenuClaude"), #selector(menuQuit), key: "q"))
         return menu
-    }
-
-    private func alertsMenuItem() -> NSMenuItem {
-        let settings = Settings.shared
-        let alerts = NSMenu()
-
-        for kind in AlertKind.allCases {
-            let entry = item(kind.label, #selector(menuToggleAlert), key: "")
-            entry.representedObject = kind.rawValue
-            entry.state = settings.isAlertEnabled(kind) ? .on : .off
-            alerts.addItem(entry)
-        }
-
-        alerts.addItem(.separator())
-        let thresholds = NSMenu()
-        for value in Settings.thresholdChoices {
-            let entry = item("\(Int(value))%", #selector(menuSetThreshold), key: "")
-            entry.tag = Int(value)
-            entry.state = abs(settings.alertThreshold - value) < 0.5 ? .on : .off
-            thresholds.addItem(entry)
-        }
-        let thresholdItem = NSMenuItem(title: L.t("Soglia", "Threshold"), action: nil, keyEquivalent: "")
-        thresholdItem.submenu = thresholds
-        alerts.addItem(thresholdItem)
-
-        alerts.addItem(.separator())
-        alerts.addItem(item(L.t("Invia una notifica di prova", "Send a test notification"), #selector(menuTestNotification), key: ""))
-
-        // Se i permessi mancano, dirlo qui evita avvisi che non arrivano mai.
-        if settings.anyAlertEnabled && Notifier.shared.authorization == .denied {
-            let warning = NSMenuItem(
-                title: L.t("⚠︎ Notifiche non autorizzate — Impostazioni di Sistema",
-                           "⚠︎ Notifications not allowed — System Settings"),
-                action: #selector(menuOpenNotificationSettings),
-                keyEquivalent: ""
-            )
-            warning.target = self
-            alerts.addItem(warning)
-        }
-
-        let item = NSMenuItem(title: L.t("Avvisi", "Alerts"), action: nil, keyEquivalent: "")
-        item.submenu = alerts
-        return item
     }
 
     private func item(_ title: String, _ action: Selector, key: String) -> NSMenuItem {
@@ -739,67 +655,56 @@ final class AppDelegate: NSObject, NSApplicationDelegate, PopoverDelegate, NSPop
         NSApp.activate(ignoringOtherApps: true)
     }
 
-    @objc private func menuSetDisplay(_ sender: NSMenuItem) {
-        if let mode = DisplayMode(rawValue: sender.tag) {
-            Settings.shared.displayMode = mode
-            renderStatusItem()
+    /// `menuclaude://…`: il modo in cui un Comando rapido o uno script
+    /// comandano l'app che è già in esecuzione.
+    @objc private func handleURLEvent(_ event: NSAppleEventDescriptor, reply: NSAppleEventDescriptor) {
+        guard
+            let string = event.paramDescriptor(forKeyword: keyDirectObject)?.stringValue,
+            let url = URL(string: string),
+            let command = Automation.command(from: url)
+        else { return }
+
+        switch command {
+        case .open: togglePopover()
+        case .refresh: refresh(force: true)
+        case .renew: renewToken()
+        case .analytics: menuShowAnalytics()
+        case .settings: menuShowSettings()
+        case .alarm: toggleSessionAlarm()
         }
-    }
-
-    @objc private func menuSetInterval(_ sender: NSMenuItem) {
-        Settings.shared.refreshInterval = TimeInterval(sender.tag)
-        scheduleFetchTimer()
-    }
-
-    @objc private func menuToggleRing() {
-        Settings.shared.showRing.toggle()
-        renderStatusItem()
-    }
-
-    @objc private func menuToggleColor() {
-        Settings.shared.colorInMenuBar.toggle()
-        renderStatusItem()
     }
 
     @objc private func menuToggleAlarm() {
         toggleSessionAlarm()
     }
 
-    @objc private func menuToggleAutoRenew() {
-        Settings.shared.autoRenewToken.toggle()
-    }
-
-    @objc private func menuToggleLogin() {
-        LaunchAtLogin.set(!LaunchAtLogin.isEnabled)
-    }
-
-    @objc private func menuToggleAlert(_ sender: NSMenuItem) {
-        guard let raw = sender.representedObject as? String, let kind = AlertKind(rawValue: raw) else { return }
-        let enabled = !Settings.shared.isAlertEnabled(kind)
-        Settings.shared.setAlert(kind, enabled: enabled)
-
-        if enabled {
-            // Il permesso si chiede quando serve davvero, non all'avvio.
-            Notifier.shared.requestAuthorization()
-            if kind == .serverStatus { refreshServerStatus() }
+    @objc private func menuShowSettings() {
+        if settingsWindow == nil {
+            let controller = SettingsWindowController()
+            controller.onChange = { [weak self] in self?.settingsChanged() }
+            controller.onTestNotification = { [weak self] in self?.menuTestNotification() }
+            settingsWindow = controller
         }
+        settingsWindow?.show()
     }
 
-    @objc private func menuSetThreshold(_ sender: NSMenuItem) {
-        Settings.shared.alertThreshold = Double(sender.tag)
+    @objc private func menuShowAnalytics() {
+        if analyticsWindow == nil { analyticsWindow = AnalyticsWindowController() }
+        analyticsWindow?.show()
     }
 
-    @objc private func menuSetLanguage(_ sender: NSMenuItem) {
-        guard let language = Language(rawValue: sender.tag) else { return }
-        Settings.shared.language = language
-        // Tutte le stringhe si risolvono al momento del disegno: basta ridisegnare.
+    /// Ogni modifica dalle impostazioni può toccare la barra, la cadenza delle
+    /// chiamate o le stringhe: si ridisegna tutto, costa niente.
+    private func settingsChanged() {
         renderStatusItem()
+        scheduleFetchTimer()
         panel.render(
             snapshot: snapshot,
             error: lastError,
             retryAt: backoff.retryAt,
             serverStatus: serverStatus
         )
+        if Settings.shared.isAlertEnabled(.serverStatus) { refreshServerStatus() }
     }
 
     @objc private func menuTestNotification() {
@@ -868,6 +773,32 @@ final class AppDelegate: NSObject, NSApplicationDelegate, PopoverDelegate, NSPop
     /// nessuno lo ha rinnovato. Invece di lasciare l'app ferma finché non si
     /// preme il pulsante, ci prova da sola — una volta, e non più spesso di
     /// ogni cinque minuti.
+    /// Ricalcola le frasi "a questo ritmo…" dalle letture archiviate.
+    private func updateForecasts(for snapshot: UsageSnapshot) {
+        let samples = UsageHistory.shared.samples(since: Date().addingTimeInterval(-8 * 86400))
+        var result: [String: String] = [:]
+
+        if let session = snapshot.session {
+            let projection = Projections.project(
+                samples: samples, resetsAt: session.resetsAt,
+                windowLength: UsageLimit.sessionWindow, value: { $0.session }
+            )
+            if let text = Projections.summary(for: projection, resetsAt: session.resetsAt) {
+                result[session.kind] = text
+            }
+        }
+        if let weekly = snapshot.weekly {
+            let projection = Projections.project(
+                samples: samples, resetsAt: weekly.resetsAt,
+                windowLength: 7 * 86400, value: { $0.weekly }
+            )
+            if let text = Projections.summary(for: projection, resetsAt: weekly.resetsAt) {
+                result[weekly.kind] = text
+            }
+        }
+        panel.forecasts = result
+    }
+
     private func autoRenewIfNeeded(after error: UsageError) {
         guard AutoRenewPolicy.shouldRenew(
             after: error,

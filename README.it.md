@@ -32,6 +32,11 @@ Si riempiono tutti nello stesso verso — più sono pieni, meno margine ti resta
 I colori seguono la severità indicata dall'API: verde sotto il 70%, giallo dal
 70%, rosso dal 90%.
 
+Sotto ogni quota, quando c'è abbastanza storico, MenuClaude aggiunge cosa si
+aspetta: *a questo ritmo finisce fra 55m*. E **Statistiche…** apre una finestra
+con token, costo e attività ricavati dai log di Claude Code — vedi
+[Statistiche](#statistiche).
+
 **Italiano e inglese**, si cambia dal menu.
 
 ## Requisiti
@@ -158,9 +163,12 @@ volta al giorno; quando esce una versione nuova, la prima voce del menu diventa
 **Aggiorna a MenuClaude x.y.z** e (se l'avviso è attivo) arriva una notifica.
 C'è anche **Cerca aggiornamenti…** quando vuoi.
 
-L'installazione scarica il DMG da questo repository, verifica che l'app dentro
-corrisponda alla versione annunciata, poi si chiude, scambia il bundle e si
-riapre — una decina di secondi, senza trascinare niente.
+L'installazione scarica il DMG da questo repository, ne confronta lo SHA-256 con
+il file `.sha256` pubblicato accanto, verifica che l'app dentro corrisponda alla
+versione annunciata, poi si chiude, scambia il bundle e si riapre — una decina
+di secondi, senza trascinare niente. Un checksum che non torna annulla
+l'aggiornamento; una release più vecchia del file di checksum si installa
+comunque, perché rifiutarla bloccherebbe proprio chi ha la versione più datata.
 
 Non serve un account sviluppatore Apple: quello servirebbe a *firmare* l'app,
 non a sostituirla, e `/Applications` è scrivibile dagli utenti amministratori.
@@ -188,28 +196,36 @@ fa comparire una richiesta a parte, perché `security` è un altro programma.
 ## Privacy
 
 MenuClaude parla con due indirizzi e basta: `api.anthropic.com` per l'utilizzo e
-`status.claude.com` per lo stato dei servizi. Nessuna telemetria, nessuna
+`status.claude.com` per lo stato dei servizi — più `api.github.com` quando
+controlla se è uscita una versione nuova. La finestra delle statistiche legge i
+log di Claude Code dal disco e non li manda da nessuna parte. Nessuna telemetria, nessuna
 analytics, nessun server intermedio, niente scritto fuori dalle preferenze
 dell'app. Il token resta nel portachiavi e serve solo a firmare la richiesta ad
 Anthropic.
 
-## Opzioni
+## Impostazioni
 
-Clic destro sull'icona:
+Clic destro sull'icona e **Impostazioni…** (o `⌘,` con il menu aperto). Sta
+tutto in una finestra, su due schede.
+
+**Generale**
 
 | Voce | Cosa fa |
 | --- | --- |
-| **Cosa mostrare** | Solo sessione, sessione + settimana, sessione + timer, tutto, solo l'anello, o i tre anelli concentrici |
-| **Frequenza aggiornamento** | Da 1 a 30 minuti (default: 5) |
-| **Avvisi** | Quali notifiche ricevere, e a quale soglia |
+| **Nella barra dei menu** | Solo sessione, sessione + settimana, sessione + timer, tutto, solo l'anello, o i tre anelli concentrici |
+| **Aggiornamento** | Da 1 a 30 minuti (default: 5) |
 | **Lingua** | Come il sistema, Italiano o English |
-| **Mostra anello** | L'indicatore circolare accanto ai numeri |
+| **Mostra l'anello di avanzamento** | L'indicatore circolare accanto ai numeri |
 | **Icona a colori** | Disattivala per tenere l'icona monocromatica come le altre di sistema |
-| **Avvia al login** | Installa un LaunchAgent in `~/Library/LaunchAgents` |
-| **Cerca aggiornamenti…** | Diventa **Aggiorna a x.y.z** quando esce una release |
-| **Rinnova il token** | Forza il rinnovo adesso — vedi [sopra](#il-pulsante-rinnova) |
 | **Rinnova il token automaticamente** | Si riprende da solo quando il token scade (attivo di default) |
-| **Avvisami al reset della sessione** | Imposta la [sveglia di fine sessione](#la-sveglia-di-fine-sessione) |
+| **Cerca aggiornamenti automaticamente** | Guarda una volta al giorno se è uscita una release |
+| **Avvia MenuClaude al login** | Installa un LaunchAgent in `~/Library/LaunchAgents` |
+
+**Avvisi** — una soglia e un interruttore per notifica; vedi [Avvisi](#avvisi).
+
+Nel menu resta solo ciò su cui si agisce: aggiorna, rinnova il token, la
+sveglia di sessione, **Statistiche…**, **Impostazioni…**, l'aggiornamento e
+l'uscita.
 
 Il countdown scorre in locale ogni secondo. La rete viene usata solo alla
 frequenza scelta, all'apertura del pannello se il dato è vecchio, e al risveglio
@@ -220,6 +236,82 @@ consecutivi tornano identici — di notte, o mentre sei via — l'intervallo
 raddoppia, fino a mezz'ora, e torna normale appena qualcosa si muove.
 L'endpoint dell'utilizzo ha un rate limit e quel budget è condiviso con Claude
 Code stesso, quindi interrogarlo a vuoto conviene evitarlo.
+
+## Statistiche
+
+**Statistiche…** nel menu apre una finestra costruita sui log di Claude Code di
+questo Mac (`~/.claude/projects`): token al giorno, ripartizione per modello e
+per progetto, e un anno di attività a calendario.
+
+<img src="docs/images/analytics.png" width="640" alt="La finestra delle statistiche">
+
+Due cose da sapere prima di leggerne un solo numero, scritte anche in cima alla
+finestra stessa:
+
+- **Copre solo Claude Code su questo Mac.** claude.ai, l'app desktop e gli altri
+  tuoi computer non lasciano log qui, quindi il lavoro fatto lì manca.
+- **La cifra in dollari non è quello che hai pagato.** È quanto costerebbero
+  quei token a consumo sull'API a listino — input, output e le tre tariffe della
+  cache. Con un abbonamento paghi l'abbonamento. Va letta come una misura del
+  lavoro svolto, non come una fattura.
+
+Un modello che non è nel listino viene comunque contato nei token; il suo costo
+resta fuori e la finestra lo dice per nome, invece di inventare una cifra.
+
+La scansione è incrementale — di ogni file di log ricorda fin dove aveva letto —
+quindi riaprire la finestra costa millisecondi anche con mesi di storico.
+
+## Proiezioni
+
+Dopo mezz'ora che osserva una quota, il pannello aggiunge una riga sotto:
+*a questo ritmo finisce fra 55m*, oppure *a questo ritmo arrivi al reset al 74%*.
+Il ritmo è misurato solo dentro la finestra corrente, perché i campioni
+precedenti a un reset appartengono a una quota che non esiste più.
+
+Con meno di mezz'ora di campioni, o quando il consumo è fermo, la riga non
+compare invece di tirare a indovinare.
+
+È anche il motivo per cui MenuClaude tiene un piccolo storico delle proprie
+letture in `~/Library/Application Support/MenuClaude/usage-history.jsonl`: l'API
+racconta solo l'istante presente, e un'ora non registrata è persa.
+
+## Comandi rapidi e script
+
+L'app Orologio di macOS non è pilotabile da fuori: non ha dizionario AppleScript
+e il suo schema `clock-timer:` non accetta una durata. Quindi MenuClaude ti dà
+il numero e lascia il resto a Comandi rapidi:
+
+```bash
+/Applications/MenuClaude.app/Contents/MacOS/MenuClaude --json
+```
+
+```json
+{
+  "plan": "pro",
+  "session_percent": 47,
+  "session_resets_at": "2026-08-18T02:09:59Z",
+  "session_resets_in_minutes": 256,
+  "weekly_percent": 25,
+  "weekly_resets_in_minutes": 5646
+}
+```
+
+Passa `session_resets_in_minutes` a un'azione **Avvia timer** e hai un vero
+timer dell'Orologio per il reset. In caso di errore il comando stampa
+`{"error": "..."}` con un codice stabile (`rate_limited`, `token_expired`, …) e
+esce con stato diverso da zero.
+
+L'app in esecuzione risponde anche agli URL, ed è quello che conviene usare da
+un Comando rapido o da un'app di scorciatoie: non avvia una seconda copia.
+
+| URL | Effetto |
+| --- | --- |
+| `menuclaude://open` | Apre il pannello |
+| `menuclaude://refresh` | Aggiorna adesso |
+| `menuclaude://renew` | Rinnova il token |
+| `menuclaude://analytics` | Apre le statistiche |
+| `menuclaude://settings` | Apre le impostazioni |
+| `menuclaude://alarm` | Attiva o annulla la sveglia di sessione |
 
 ## Avvisi
 
@@ -322,6 +414,14 @@ Sources/MenuClaude/
   AppDelegate.swift           voce di barra, timer, menu contestuale
   PopoverViewController.swift il pannello a discesa
   Views.swift                 barre, righe e anelli disegnati a mano
+  Charts.swift                istogramma, andamento, heatmap a calendario, tessere
+  AnalyticsWindow.swift       la finestra delle statistiche
+  SettingsWindow.swift        la finestra delle impostazioni
+  LocalUsage.swift            scansione incrementale dei log di Claude Code
+  Pricing.swift               il listino dell'API, aggiornato a mano
+  UsageHistory.swift          lo storico registrato delle letture dell'API
+  Projection.swift            "a questo ritmo finisce fra…"
+  Automation.swift            --json e gli URL menuclaude://
   Theme.swift                 colori per severità, chiaro e scuro
   Localization.swift          stringhe italiane e inglesi
   UsageClient.swift           chiamata all'API di usage e parsing
@@ -336,15 +436,17 @@ Sources/MenuClaude/
   Updater.swift               aggiornamento in-app dalle release GitHub
   SessionAlarm.swift          la sveglia per il reset della sessione
   Diagnostics.swift           --diagnose, --renew-token, --update, --test-notification
-  Preview.swift               --preview <cartella>
+  Preview.swift               --preview <cartella>, --analytics-shot <prefisso>
 Tools/make-icon.sh            rigenera Resources/AppIcon.icns
 Tools/make-dmg.sh             crea build/MenuClaude.dmg
-docs/analytics-feasibility.md valutazione di una sezione analytics (non fatta)
+docs/analytics-feasibility.md la valutazione da cui è nata questa finestra
 build.sh                      compila e firma il bundle
 ```
 
 `--preview <cartella>` disegna pannello e voce di barra su PNG, in chiaro e in
-scuro, senza aprire l'app: comodo per rivedere il layout dopo una modifica.
+scuro, senza aprire l'app; `--analytics-shot <prefisso>` fa lo stesso con tutta
+la finestra delle statistiche, srotolata. Servono a rivedere il layout dopo una
+modifica senza disturbare la copia in esecuzione.
 
 ## Note
 
@@ -352,6 +454,13 @@ Il payload dell'API cambia nel tempo: compaiono e spariscono quote per modello.
 MenuClaude legge l'array `limits` in modo generico, così una nuova quota appare
 nel pannello senza modifiche al codice; i vecchi campi `five_hour` /
 `seven_day` restano come rete di sicurezza.
+
+**Non c'è un widget in Centro Notifiche, e qui non può esserci.** Un'estensione
+WidgetKit si compila senza problemi con i soli Command Line Tools, ma macOS si
+rifiuta di registrare un'estensione la cui firma non porta un Team ID: con la
+firma ad-hoc `pluginkit` non la elenca mai, e il widget semplicemente non
+comparirebbe. Servirebbe un account sviluppatore Apple a pagamento con cui
+firmare, ed è il motivo per cui MenuClaude si ferma alla barra dei menu.
 
 Il bundle identifier è `com.menuclaude.MenuClaude`. Se pubblichi una tua
 versione, cambialo in `Info.plist` e in `build.sh`.

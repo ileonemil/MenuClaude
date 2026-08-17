@@ -33,6 +33,11 @@ you have left.
 Colours follow the severity the API reports: green below 70%, amber from 70%,
 red from 90%.
 
+Under each quota, once there's enough history, MenuClaude adds what it expects
+to happen: *at this rate it runs out in 55m*. And **Analytics…** opens a window
+with tokens, cost and activity drawn from your Claude Code logs — see
+[Analytics](#analytics).
+
 **English and Italian**, switchable from the menu.
 
 ## Requirements
@@ -157,9 +162,12 @@ when a new version exists, the menu's first entry becomes **Update to
 MenuClaude x.y.z** and (if the alert is on) a notification arrives. There is
 also **Check for updates…** whenever you want.
 
-Installing downloads the DMG from this repository, verifies the app inside
-matches the advertised version, then quits, swaps the bundle and reopens —
-about ten seconds, no dragging.
+Installing downloads the DMG from this repository, checks its SHA-256 against
+the `.sha256` file published beside it, verifies the app inside matches the
+advertised version, then quits, swaps the bundle and reopens — about ten
+seconds, no dragging. A checksum that doesn't match aborts the update; a
+release that predates the checksum file still installs, since refusing it would
+strand exactly the people running the oldest version.
 
 No Apple Developer account is needed: that would be required to *sign* the app,
 not to replace it. `/Applications` is writable by admin users. Note that the
@@ -185,27 +193,34 @@ prompts separately, as `security` is a different program.
 ## Privacy
 
 MenuClaude talks to exactly two addresses: `api.anthropic.com` for usage and
-`status.claude.com` for service status. No telemetry, no analytics, no
+`status.claude.com` for service status — plus `api.github.com` when it checks
+for a new version. The analytics window reads your Claude Code logs from disk
+and never sends them anywhere. No telemetry, no analytics, no
 intermediary server, nothing written outside the app's own preferences. Your
 token stays in the Keychain and is only used to sign the request to Anthropic.
 
-## Options
+## Settings
 
-Right-click the menu bar icon:
+Right-click the menu bar icon and choose **Settings…** (or press `⌘,` with the
+menu open). Everything lives in one window, on two tabs.
+
+**General**
 
 | Option | What it does |
 | --- | --- |
-| **What to show** | Session only, session + week, session + timer, everything, ring only, or the three concentric rings |
-| **Update frequency** | From 1 to 30 minutes (default: 5) |
-| **Alerts** | Which notifications to receive, and at what threshold |
+| **In the menu bar** | Session only, session + week, session + timer, everything, ring only, or the three concentric rings |
+| **Refresh** | From 1 to 30 minutes (default: 5) |
 | **Language** | Same as system, Italiano, or English |
-| **Show ring** | The circular indicator next to the numbers |
+| **Show the progress ring** | The circular indicator next to the numbers |
 | **Coloured icon** | Turn off to keep the icon monochrome like other system icons |
-| **Launch at login** | Installs a LaunchAgent in `~/Library/LaunchAgents` |
-| **Check for updates…** | Becomes **Update to x.y.z** when a new release exists |
-| **Renew the token** | Forces a refresh now — see [above](#the-renew-button) |
 | **Renew the token automatically** | Recovers on its own when the token expires (on by default) |
-| **Alert me when the session resets** | Sets the [session alarm](#the-session-alarm) |
+| **Check for updates automatically** | Looks for a new release once a day |
+| **Launch MenuClaude at login** | Installs a LaunchAgent in `~/Library/LaunchAgents` |
+
+**Alerts** — one threshold and a switch per notification; see [Alerts](#alerts).
+
+The menu itself keeps only what you act on: refresh, renew the token, the
+session alarm, **Analytics…**, **Settings…**, the update, and quit.
 
 The countdown ticks locally every second. The network is only used at the chosen
 frequency, when you open the panel with stale data, and after waking from sleep.
@@ -215,6 +230,81 @@ checks return identical numbers — overnight, or while you're away — the inte
 doubles, up to 30 minutes, and snaps back to normal as soon as something moves.
 The usage endpoint is rate-limited and that budget is shared with Claude Code
 itself, so idle polling is worth avoiding.
+
+## Analytics
+
+**Analytics…** in the menu opens a window built from the Claude Code logs on
+this Mac (`~/.claude/projects`): tokens per day, a breakdown by model and by
+project, and a year of activity as a calendar.
+
+<img src="docs/images/analytics.png" width="640" alt="The analytics window">
+
+Two things to know before reading any number in it, both printed at the top of
+the window itself:
+
+- **It only covers Claude Code on this Mac.** claude.ai, the desktop app and
+  your other computers leave no logs here, so their work is missing.
+- **The dollar figure is not what you paid.** It is what those tokens would
+  cost on the pay-as-you-go API at list price — input, output and the three
+  cache rates. With a subscription you pay the subscription. Read it as a
+  measure of work done, not as a bill.
+
+A model that isn't in the price table is still counted in tokens; its cost is
+left out and the window names it rather than inventing a figure.
+
+The scan is incremental — it remembers how far it read into each log file — so
+reopening the window costs milliseconds even with months of history.
+
+## Forecasts
+
+Once MenuClaude has watched a quota for half an hour, the panel adds a line
+under it: *at this rate it runs out in 55m*, or *at this rate you'll reach the
+reset at 74%*. The rate is measured only inside the current window, because
+samples from before a reset belong to a quota that no longer exists.
+
+With less than half an hour of samples, or when consumption is flat, the line
+stays away instead of guessing.
+
+This is also why MenuClaude keeps a small history of its own readings in
+`~/Library/Application Support/MenuClaude/usage-history.jsonl` — the API only
+ever reports the present moment, so an hour that isn't recorded is lost.
+
+## Shortcuts and scripting
+
+macOS Clock cannot be driven by another app: it has no AppleScript dictionary
+and its `clock-timer:` URL scheme takes no duration. So MenuClaude gives you the
+number and lets Shortcuts do the rest:
+
+```bash
+/Applications/MenuClaude.app/Contents/MacOS/MenuClaude --json
+```
+
+```json
+{
+  "plan": "pro",
+  "session_percent": 47,
+  "session_resets_at": "2026-08-18T02:09:59Z",
+  "session_resets_in_minutes": 256,
+  "weekly_percent": 25,
+  "weekly_resets_in_minutes": 5646
+}
+```
+
+Feed `session_resets_in_minutes` to a **Start Timer** action and you have a real
+Clock timer for the reset. On failure the command prints `{"error": "..."}` with
+a stable code (`rate_limited`, `token_expired`, …) and exits non-zero.
+
+The running app also answers URLs, which is what a Shortcut or a hotkey app
+should use — it doesn't start a second copy:
+
+| URL | Effect |
+| --- | --- |
+| `menuclaude://open` | Opens the panel |
+| `menuclaude://refresh` | Refreshes now |
+| `menuclaude://renew` | Renews the token |
+| `menuclaude://analytics` | Opens the analytics window |
+| `menuclaude://settings` | Opens settings |
+| `menuclaude://alarm` | Toggles the session alarm |
 
 ## Alerts
 
@@ -315,6 +405,14 @@ Sources/MenuClaude/
   AppDelegate.swift           menu bar item, timers, context menu
   PopoverViewController.swift the drop-down panel
   Views.swift                 bars, rows and rings, drawn by hand
+  Charts.swift                bar chart, trend, calendar heatmap, stat tiles
+  AnalyticsWindow.swift       the analytics window
+  SettingsWindow.swift        the settings window
+  LocalUsage.swift            incremental scan of the Claude Code logs
+  Pricing.swift               the API price list, updated by hand
+  UsageHistory.swift          the recorded history of API readings
+  Projection.swift            "at this rate it runs out in…"
+  Automation.swift            --json and the menuclaude:// URLs
   Theme.swift                 severity colours, light and dark
   Localization.swift          Italian/English strings
   UsageClient.swift           the usage API call and its parsing
@@ -329,15 +427,17 @@ Sources/MenuClaude/
   Updater.swift               in-app update from GitHub releases
   SessionAlarm.swift          the alarm for the session reset
   Diagnostics.swift           --diagnose, --renew-token, --update, --test-notification
-  Preview.swift               --preview <folder>
+  Preview.swift               --preview <folder>, --analytics-shot <prefix>
 Tools/make-icon.sh            regenerates Resources/AppIcon.icns
 Tools/make-dmg.sh             builds build/MenuClaude.dmg
-docs/analytics-feasibility.md assessment of an analytics section (not built)
+docs/analytics-feasibility.md the assessment this analytics window came from
 build.sh                      compiles and signs the bundle
 ```
 
 `--preview <folder>` renders the panel and the menu bar item to PNGs, in light
-and dark, without opening the app — handy for checking layout after a change.
+and dark, without opening the app; `--analytics-shot <prefix>` does the same for
+the whole analytics window, unrolled. Both are for checking layout after a
+change without disturbing the running copy.
 
 ## Notes
 
@@ -345,6 +445,13 @@ The API payload changes over time: quotas per model appear and disappear.
 MenuClaude reads the `limits` array generically, so a new quota shows up in the
 panel without a code change; the older `five_hour` / `seven_day` fields are kept
 as a fallback.
+
+**There is no Notification Centre widget, and there can't be one here.** A
+WidgetKit extension compiles fine against the Command Line Tools, but macOS
+refuses to register an extension whose signature carries no Team ID: with an
+ad-hoc signature `pluginkit` never lists it, so the widget would simply never
+appear. It needs a paid Apple Developer account to sign with, which is why
+MenuClaude stops at the menu bar.
 
 The bundle identifier is `com.menuclaude.MenuClaude`. If you publish your own
 build, change it in `Info.plist` and `build.sh`.
